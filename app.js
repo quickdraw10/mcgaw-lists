@@ -67,7 +67,78 @@ const TYPES = {
   notice:    { name: 'Notice board',    icon: 'pin',   colour: '#F5B800', title: 'Notice board',  desc: 'Family notes, pinned with “seen by”.', sub: false },
 };
 const TYPE_ORDER = ['notice', 'meals', 'shopping', 'todo', 'work', 'christmas', 'packing'];
-const COLOURS = ['#0A84FF', '#5E5CE6', '#BF5AF2', '#FF375F', '#E0352B', '#FF9500', '#F5B800', '#30B05A', '#00A5A8', '#8E8E93'];
+const BRIGHT = ['#0A84FF', '#5E5CE6', '#BF5AF2', '#FF375F', '#E0352B', '#FF9500', '#F5B800', '#30B05A', '#00A5A8', '#8E8E93'];
+const PASTEL = ['#A9CBEF', '#C5B6E8', '#E7B8E6', '#F5BCC9', '#F7C1A8', '#FBD9A6', '#F6E7A1', '#BFE3C4', '#A8DDD6', '#D6CFC7'];
+const COLOURS = [...BRIGHT, ...PASTEL];
+const THEMES = {
+  classic:  { name: 'Classic',  accent: '#0A84FF', bgL: '#F2F2F7', bgD: '#000000', cardD: '#1C1C1E' },
+  lavender: { name: 'Lavender', accent: '#7C63C9', bgL: '#F3F0FA', bgD: '#100D18', cardD: '#1E1A28' },
+  mint:     { name: 'Mint',     accent: '#239A7C', bgL: '#EDF7F3', bgD: '#0A1411', cardD: '#17221E' },
+  peach:    { name: 'Peach',    accent: '#D9714A', bgL: '#FCF1EB', bgD: '#170F0B', cardD: '#261C17' },
+  blush:    { name: 'Blush',    accent: '#C95482', bgL: '#FBEFF3', bgD: '#170C11', cardD: '#26191F' },
+  sky:      { name: 'Sky',      accent: '#3B8FCB', bgL: '#EDF4FA', bgD: '#0A1117', cardD: '#172029' },
+  lemon:    { name: 'Lemon',    accent: '#A98410', bgL: '#FAF7E8', bgD: '#14120A', cardD: '#232014' },
+  sage:     { name: 'Sage',     accent: '#5E8A5A', bgL: '#F0F4EE', bgD: '#0E130D', cardD: '#1B2219' },
+};
+function isLight(hex) {
+  const h = (hex || '').replace('#', '');
+  if (h.length !== 6) return false;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.62;
+}
+const ink = (c) => (isLight(c) ? 'rgba(0,0,0,.72)' : '#fff');
+function swatchHtml(cur, attrs) {
+  const one = (c) => `<button class="swatch ${cur === c ? 'on' : ''}" style="--c:${c}" ${attrs} data-c="${c}" aria-label="Colour"></button>`;
+  return `<div class="group swatch-group"><div class="swatch-label">Bright</div><div class="swatches">${BRIGHT.map(one).join('')}</div><div class="swatch-label">Pastel</div><div class="swatches">${PASTEL.map(one).join('')}</div></div>`;
+}
+
+/* ---------- Appearance (saved on this iPhone) ---------- */
+const PREF = 'mcgaw-lists-pref-';
+const pref = (k, d) => { try { const v = localStorage.getItem(PREF + k); return v === null ? d : v; } catch { return d; } };
+const setPref = (k, v) => { try { if (v === null) localStorage.removeItem(PREF + k); else localStorage.setItem(PREF + k, v); return true; } catch { return false; } };
+function applyAppearance() {
+  const root = document.documentElement;
+  const mode = pref('mode', 'system');
+  if (mode === 'system') delete root.dataset.theme; else root.dataset.theme = mode;
+  const t = THEMES[pref('theme', 'classic')] || THEMES.classic;
+  let st = document.getElementById('theme-style');
+  if (!st) { st = document.createElement('style'); st.id = 'theme-style'; document.head.appendChild(st); }
+  st.textContent = `:root{--accent:${t.accent};--bg:${t.bgL}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:${t.bgD};--card:${t.cardD}}}
+:root[data-theme="dark"]{--bg:${t.bgD};--card:${t.cardD}}`;
+  let bg = document.getElementById('bg');
+  const img = pref('bg', null);
+  if (img) {
+    if (!bg) { bg = document.createElement('div'); bg.id = 'bg'; document.body.prepend(bg); }
+    bg.style.backgroundImage = `url("${img}")`;
+    bg.style.setProperty('--dim', String(+pref('dim', '55') / 100));
+    document.body.classList.add('has-bg');
+  } else {
+    if (bg) bg.remove();
+    document.body.classList.remove('has-bg');
+  }
+  const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', dark ? t.bgD : t.bgL));
+}
+function inkPass(root) {
+  root.querySelectorAll('[style*="--c:"]').forEach((el) => { const c = el.style.getPropertyValue('--c').trim(); if (c.startsWith('#')) el.style.setProperty('--ink', ink(c)); });
+}
+async function setBackground(file) {
+  try {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const k = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(img.naturalWidth * k); cv.height = Math.round(img.naturalHeight * k);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    URL.revokeObjectURL(url);
+    let ok = setPref('bg', cv.toDataURL('image/jpeg', 0.8));
+    if (!ok) ok = setPref('bg', cv.toDataURL('image/jpeg', 0.55));
+    if (!ok) return toast('That photo is too large — try a smaller one');
+    applyAppearance(); render(); toast('Background updated');
+  } catch (e) { console.error(e); toast('Couldn’t open that photo — try another'); }
+}
 
 const AISLES = ['Fruit & veg', 'Bakery', 'Meat & fish', 'Dairy & eggs', 'Chilled', 'Frozen', 'Food cupboard', 'Drinks', 'Snacks', 'Household', 'Toiletries', 'Other'];
 const AISLE_WORDS = {
@@ -446,6 +517,7 @@ function render() {
   app.innerHTML = html;
   app.classList.toggle('no-tabs', r.name === 'list');
   if (keep) { const el = document.getElementById(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.s, keep.s); } catch { /* */ } } }
+  inkPass(app);
   renderTabs(r);
   renderSheets();
 }
@@ -597,6 +669,19 @@ function familyView() {
       <div class="row tap" data-a="push"><span class="tile-icon sm" style="--c:#FF3B30">${icon('bell', 18)}</span><div class="row-main"><div class="row-title">Notifications</div><div class="row-sub">${pushOn ? 'On for this iPhone' : standalone ? 'Tap to turn on' : 'Add to Home Screen first'}</div></div><span class="switch ${pushOn ? 'on' : ''}"></span></div>
       <div class="row tap" data-a="install"><span class="tile-icon sm" style="--c:#8E8E93">${icon('plus', 18, 2.4)}</span><div class="row-main"><div class="row-title">Add to Home Screen</div><div class="row-sub">${standalone ? 'Installed' : 'How to install the app'}</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
     </div>
+    <div class="section-label">Appearance</div>
+    <div class="group">
+      <div class="field"><label>Mode</label><div class="seg" style="flex:1">${[['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([k, v]) => `<button class="${pref('mode', 'system') === k ? 'on' : ''}" data-a="setMode" data-v="${k}">${v}</button>`).join('')}</div></div>
+      <div class="field col"><label>Theme</label><div class="themes">${Object.entries(THEMES).map(([k, t]) => `<button class="theme-dot ${pref('theme', 'classic') === k ? 'on' : ''}" data-a="setTheme" data-v="${k}" style="--a:${t.accent};--b:${t.bgL}"><span></span>${t.name}</button>`).join('')}</div></div>
+      <div class="field col"><label>Background photo</label>
+        ${pref('bg', null) ? `<div class="bg-preview" style="background-image:url('${pref('bg', '')}')"></div>
+          <div class="dim-row"><span>Photo</span><input type="range" id="bg-dim" min="0" max="90" step="5" value="${pref('dim', '55')}" data-input="bgDim" aria-label="Fade the photo"><span>Faded</span></div>
+          <div class="bg-btns"><label class="btn secondary" for="bg-file">Change photo</label><button class="btn danger" data-a="bgRemove">Remove</button></div>`
+        : '<label class="btn secondary" for="bg-file">Choose a photo</label>'}
+        <input type="file" id="bg-file" accept="image/*" hidden data-change="bgFile">
+      </div>
+    </div>
+    <p class="hint">Appearance is saved on this iPhone, so each of you can choose your own.</p>
     <div class="section-label">The McGaws</div><div class="group">${fam}</div>
     <div class="stack-gap" style="margin-top:22px">
       ${DEMO ? '<button class="btn secondary" data-a="resetDemo">Reset demo data</button>' : ''}
@@ -618,7 +703,7 @@ function listView(id) {
         <button data-a="share" data-id="${l.id}" aria-label="Sharing">${avatarStack(people, 28)}</button>
         <button class="icon-btn" data-a="listMenu" data-id="${l.id}" aria-label="List options">${icon('more', 20, 2.6)}</button>
       </div></div>
-    <div class="eyebrow" style="color:${listColour(l)}">${TYPES[l.type].name}${isOwner(l) ? '' : ' · ' + esc(memberName(l.owner)) + '’s list'}</div>
+    <div class="eyebrow" style="color:${isLight(listColour(l)) ? `color-mix(in srgb, ${listColour(l)} 55%, var(--label))` : listColour(l)}">${TYPES[l.type].name}${isOwner(l) ? '' : ' · ' + esc(memberName(l.owner)) + '’s list'}</div>
     <h1 class="large">${esc(l.title)}</h1>`;
   const body = { shopping: shoppingView, todo: todoView, work: workView, christmas: christmasView, packing: packingView, meals: mealsView, notice: noticeView }[l.type](l);
   return `<div style="--c:${listColour(l)}">${head}${body}</div>`;
@@ -794,7 +879,7 @@ function noticeView(l) {
       <div class="note-foot">${avatar(n.created_by, 22)}<span>${esc(memberName(n.created_by))} · ${timeAgo(n.created_at)}${n.data?.until ? ` · until ${fmtDay(parseYmd(n.data.until))}` : ''}</span>
         <span class="seen">${seen.length ? `<span class="muted">Seen</span>${avatarStack(seen, 20)}` : ''}${!mine && !seen.includes(S.me) ? `<button class="seen-btn" data-a="seen" data-id="${n.id}">Mark seen</button>` : ''}</span></div></div>`;
   }).join('');
-  return `<button class="btn" data-a="newNotice" data-id="${l.id}" style="background:${listColour(l)}">${icon('plus', 20, 2.4)} New note</button>
+  return `<button class="btn tinted" data-a="newNotice" data-id="${l.id}" style="--c:${listColour(l)}">${icon('plus', 20, 2.4)} New note</button>
     <div class="notes" style="margin-top:14px">${cards || '<div class="empty"><div class="big">The board is empty</div>Post reminders, plans and house rules for everyone on this board.</div>'}</div>
     ${oldN ? `<button class="link-btn" data-a="toggleUi" data-k="old-${l.id}">${showOld ? 'Hide' : 'Show'} ${oldN} expired note${oldN === 1 ? '' : 's'}</button>` : ''}`;
 }
@@ -816,6 +901,7 @@ function renderSheets(force) {
   }).join('');
   host.querySelectorAll('.sheet').forEach((el, i) => { if (!S.sheets[i].fresh && scrolls[i]) el.scrollTop = scrolls[i]; });
   wireEyes(host);
+  inkPass(host);
   const fresh = S.sheets.find((s) => s.fresh && s.focus);
   S.sheets.forEach((s) => { s.fresh = false; });
   if (fresh) setTimeout(() => { const el = document.getElementById(fresh.focus); if (el) el.focus(); }, 60);
@@ -847,7 +933,7 @@ function newListSheet(s) {
     <div class="section-label">Name</div>
     <input class="big-input" id="nl-title" value="${esc(d.title)}" placeholder="List name" data-input="nlTitle" autocomplete="off">
     <div class="section-label">Colour</div>
-    <div class="group swatches">${COLOURS.map((c) => `<button class="swatch ${d.colour === c ? 'on' : ''}" style="--c:${c}" data-a="nlColour" data-c="${c}"></button>`).join('')}</div>
+    ${swatchHtml(d.colour, 'data-a="nlColour"')}
     <div class="section-label"><span>Who can see it</span><button data-a="nlAllAdmin">${others.every((m) => d.share[m.id] === 'admin') ? 'Undo admins' : 'Everyone admin'}</button></div>
     <div class="group" style="--indent:60px">${others.map((m) => shareRowHtml(m, d.share[m.id], 'nlShare')).join('')}</div>
     <p class="hint">Only you can change who sees this list. Admins can rename it, change settings and tidy up anyone’s items. Everyone you add gets a notification.</p>`;
@@ -881,7 +967,7 @@ function listMenuSheet(s) {
   let html = head('List options', '<span></span>');
   if (admin) {
     html += `<div class="section-label">Name</div><input class="big-input" id="lm-title" value="${esc(l.title)}" data-change="renameList" data-id="${l.id}" autocomplete="off">
-      <div class="section-label">Colour</div><div class="group swatches">${COLOURS.map((c) => `<button class="swatch ${listColour(l) === c ? 'on' : ''}" style="--c:${c}" data-a="listColour" data-id="${l.id}" data-c="${c}"></button>`).join('')}</div>`;
+      <div class="section-label">Colour</div>${swatchHtml(listColour(l), `data-a="listColour" data-id="${l.id}"`)}`;
     if (l.type === 'meals') {
       html += `<div class="section-label">Meals to plan</div><div class="group">${Object.entries(SLOTS).map(([k, v]) => `<div class="row tap" data-a="slotToggle" data-id="${l.id}" data-s="${k}"><div class="row-main"><div class="row-title">${v}</div></div><span class="switch ${slots.includes(k) ? 'on' : ''}"></span></div>`).join('')}</div>`;
     }
@@ -1003,7 +1089,7 @@ function noticeSheet(s) {
   return head(editing ? 'Edit note' : 'New note', editing ? `<button class="txt danger" data-a="deleteNotice">Delete</button>` : undefined, `<button class="txt r" data-a="saveNotice" ${ok ? '' : 'disabled style="opacity:.4"'}>${editing ? 'Save' : 'Post'}</button>`) + `
     <input class="big-input" id="nt-text" value="${esc(d.text)}" placeholder="Headline" data-input="noticeField" data-f="text" autocomplete="off" style="margin-top:6px">
     <div class="group" style="margin-top:10px"><textarea class="textarea" style="min-height:120px" placeholder="Write the note…" data-input="noticeField" data-f="notes">${esc(d.notes)}</textarea></div>
-    <div class="section-label">Colour</div><div class="group swatches">${COLOURS.map((c) => `<button class="swatch ${d.colour === c ? 'on' : ''}" style="--c:${c}" data-a="noticeColour" data-c="${c}"></button>`).join('')}</div>
+    <div class="section-label">Colour</div>${swatchHtml(d.colour, 'data-a="noticeColour"')}
     <div class="group" style="margin-top:18px">
       <div class="field tap" data-a="noticePin"><label>Pin to top</label><span style="flex:1"></span><span class="switch ${d.pinned ? 'on' : ''}"></span></div>
       <div class="field"><label>Show until</label><input type="date" value="${d.until || ''}" data-input="noticeField" data-f="until"></div>
@@ -1302,6 +1388,9 @@ const A = {
   },
 
   push: enablePush,
+  setMode: (el) => { setPref('mode', el.dataset.v); applyAppearance(); render(); },
+  setTheme: (el) => { setPref('theme', el.dataset.v); applyAppearance(); render(); },
+  bgRemove: () => { setPref('bg', null); applyAppearance(); render(); toast('Background removed'); },
   install: () => openSheet({ kind: 'install' }),
   resetDemo: async () => { if (await ask('Put the demo data back to how it started?', 'Reset')) { store.reset(); reload(); toast('Demo reset'); } },
   signOut: async () => { if (!DEMO && !await ask('Sign out of McGaw Lists?', 'Sign out', true)) return; await store.signOut(); S.me = null; S.ready = false; S.sheets = []; showLogin(); },
@@ -1365,10 +1454,12 @@ const CHANGE = {
   giftPrice: (el) => { const it = getItem(el.dataset.id); const n = parseFloat(el.value.replace(/[£,]/g, '')); upd('items', { id: it.id }, { data: { ...it.data, price: isNaN(n) ? null : n } }); },
   giftLink: (el) => { const it = getItem(el.dataset.id); let v = el.value.trim(); if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v; upd('items', { id: it.id }, { data: { ...it.data, link: v || null } }); renderSheets(true); },
   packBag: (el) => { const it = getItem(el.dataset.id); const b = el.value; upd('items', { id: it.id }, { data: { ...it.data, bag: b }, assignees: b === 'shared' ? it.assignees : [b] }); renderSheets(true); },
+  bgFile: (el) => { const f = el.files && el.files[0]; if (f) setBackground(f); el.value = ''; },
   renameList: (el) => { const v = el.value.trim(); if (v) upd('lists', { id: el.dataset.id }, { title: v }); },
 };
 const INPUT = {
   nlTitle: (el) => { const d = topSheet().draft; d.title = el.value; d.touched = true; const b = $('[data-a="createList"]'); if (b) { b.disabled = !d.title.trim(); b.style.opacity = d.title.trim() ? 1 : 0.4; } },
+  bgDim: (el) => { setPref('dim', el.value); const bg = document.getElementById('bg'); if (bg) bg.style.setProperty('--dim', String(el.value / 100)); },
   mealField: (el) => { topSheet().draft[el.dataset.f] = el.value; },
   noticeField: (el) => { const d = topSheet().draft; d[el.dataset.f] = el.value; const b = $('[data-a="saveNotice"]'); if (b) { b.disabled = !d.text.trim(); b.style.opacity = d.text.trim() ? 1 : 0.4; } },
 };
@@ -1516,4 +1607,6 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW', e));
   navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.url) location.hash = e.data.url.replace(/^.*#/, '#'); });
 }
+applyAppearance();
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyAppearance);
 start();

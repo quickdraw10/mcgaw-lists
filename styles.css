@@ -98,7 +98,7 @@ h2.section { font-size: 20px; font-weight: 700; margin: 26px 4px 8px; display: f
 .row-title { font-size: 17px; overflow-wrap: anywhere; }
 .row-sub, .row-meta { font-size: 13px; color: var(--label2); margin-top: 2px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .chev { color: var(--label3); flex: none; }
-.tile-icon { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; color: #fff; flex: none; background: var(--c, var(--accent)); }
+.tile-icon { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; color: var(--ink, #fff); flex: none; background: var(--c, var(--accent)); }
 .tile-icon.sm { width: 30px; height: 30px; border-radius: 8px; }
 
 /* ---------- Summary tiles ---------- */
@@ -139,7 +139,7 @@ h2.section { font-size: 20px; font-weight: 700; margin: 26px 4px 8px; display: f
 /* ---------- Checkboxes ---------- */
 .check { width: 24px; height: 24px; border-radius: 50%; border: 1.6px solid var(--label3); flex: none; display: grid; place-items: center; transition: background .15s, border-color .15s; }
 .check.on { background: var(--c, var(--accent)); border-color: var(--c, var(--accent)); }
-.check.on::after { content: ""; width: 10px; height: 5px; border: solid #fff; border-width: 0 0 2.2px 2.2px; transform: translateY(-1px) rotate(-45deg); }
+.check.on::after { content: ""; width: 10px; height: 5px; border: solid var(--ink, #fff); border-width: 0 0 2.2px 2.2px; transform: translateY(-1px) rotate(-45deg); }
 .check.half { border-color: var(--c); }
 .check.half::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
 .check.sm { width: 20px; height: 20px; }
@@ -199,6 +199,8 @@ h2.section { font-size: 20px; font-weight: 700; margin: 26px 4px 8px; display: f
 .btn:disabled { opacity: .4; }
 .stack-gap > * + * { margin-top: 10px; }
 .swatches { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px 14px; }
+.swatch-group .swatches { padding-top: 4px; }
+.swatch-label { font-size: 12px; font-weight: 600; color: var(--label2); text-transform: uppercase; letter-spacing: .03em; padding: 12px 14px 0; }
 .swatch { width: 32px; height: 32px; border-radius: 50%; background: var(--c); }
 .swatch.on { box-shadow: 0 0 0 3px var(--card), 0 0 0 5px var(--c); }
 
@@ -303,3 +305,26 @@ h2.section { font-size: 20px; font-weight: 700; margin: 26px 4px 8px; display: f
 .alert-btns button + button { border-left: .5px solid var(--sep); }
 .alert-btns .strong { font-weight: 600; }
 .alert-btns .danger { color: var(--red); font-weight: 600; }
+
+/* ---------- Appearance ---------- */
+.btn.tinted { background: var(--c); color: var(--ink, #fff); }
+.themes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 6px; }
+.theme-dot { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--label2); }
+.theme-dot span { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, var(--b) 0 50%, var(--a) 50% 100%); box-shadow: inset 0 0 0 .5px rgba(0,0,0,.15); }
+.theme-dot.on { color: var(--label); font-weight: 600; }
+.theme-dot.on span { box-shadow: 0 0 0 3px var(--card), 0 0 0 5px var(--a); }
+.bg-preview { height: 120px; border-radius: 12px; background-size: cover; background-position: center; }
+.dim-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--label2); }
+.dim-row input { flex: 1; accent-color: var(--accent); }
+.bg-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.bg-btns .btn { padding: 11px; font-size: 15px; }
+label.btn { cursor: pointer; }
+#bg { position: fixed; inset: 0; z-index: 0; background-size: cover; background-position: center; pointer-events: none; }
+#bg::after { content: ""; position: absolute; inset: 0; background: var(--bg); opacity: var(--dim, .55); }
+body.has-bg { background: transparent; }
+html { background: var(--bg); }
+#view { position: relative; z-index: 1; }
+body.has-bg .eyebrow, body.has-bg .section-label, body.has-bg .hint { text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg); }
+.field.col label.btn { color: var(--accent); font-size: 15px; min-width: 0; }
+.field.col label.btn.danger { color: var(--red); }
+.field .dim-row input[type=range] { -webkit-appearance: auto; appearance: auto; text-align: left; padding: 0; background: none; flex: 1; }
