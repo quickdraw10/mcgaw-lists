@@ -23,10 +23,11 @@ Deno.serve(async (req) => {
     Deno.env.get("VAPID_PRIVATE_KEY")!,
   );
 
-  const db = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
+  let key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!key) {
+    try { const j = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}"); key = j.default ?? Object.values(j)[0] ?? ""; } catch { /* none */ }
+  }
+  const db = createClient(Deno.env.get("SUPABASE_URL")!, key);
 
   const { data: subs } = await db
     .from("push_subscriptions")

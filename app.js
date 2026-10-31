@@ -244,6 +244,16 @@ class SupaStore {
     this.sb.channel('mcgaw-all').on('postgres_changes', { event: '*', schema: 'public' }, cb).subscribe();
     this.sb.auth.onAuthStateChange((ev) => { if (ev === 'PASSWORD_RECOVERY') openSheet({ kind: 'password' }); });
   }
+  async todo(action, payload = {}) {
+    const { data, error } = await this.sb.functions.invoke('todo', { body: { action, ...payload } });
+    if (error) {
+      let msg = error.message;
+      try { const j = await error.context.json(); if (j.error) msg = j.error; } catch { /* keep message */ }
+      if (/Failed to send|not found|404/i.test(msg)) msg = 'The To Do sync isn’t set up in Supabase yet';
+      throw new Error(msg);
+    }
+    return data;
+  }
   async savePush(sub, me) {
     const j = sub.toJSON();
     await this.upsert('push_subscriptions', { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, member: me }, 'endpoint');
@@ -321,6 +331,7 @@ class DemoStore {
   }
   subscribe() {}
   async savePush() {}
+  async todo() { throw new Error('Microsoft To Do sync works once the app is connected to Supabase'); }
 }
 
 function seedDemo() {
@@ -670,7 +681,7 @@ function familyView() {
     </div>
     <div class="section-label">Bring in your lists</div>
     <div class="group">
-      <div class="row tap" data-a="openImport" data-tab="todo"><span class="tile-icon sm" style="--c:#2564CF">${icon('check', 18)}</span><div class="row-main"><div class="row-title">Import from Microsoft To Do</div><div class="row-sub">Whole lists, with dates and steps</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
+      ${todoRow()}
       <div class="row tap" data-a="openImport" data-tab="paste"><span class="tile-icon sm" style="--c:#25A366">${icon('list', 18)}</span><div class="row-main"><div class="row-title">Paste a list</div><div class="row-sub">From WhatsApp, Notes, an email…</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
     </div>
     <div class="section-label">Appearance</div>
@@ -925,6 +936,7 @@ function sheetHtml(s) {
     case 'install': return installSheet();
     case 'password': return passwordSheet();
     case 'import': return importSheet(s);
+    case 'todo': return todoSheet(s);
   }
   return '';
 }
@@ -1175,7 +1187,7 @@ function importSheet(s) {
   return html;
 }
 async function graph(token, url) {
-  const r = await fetch(url.startsWith('http') ? url : 'https://graph.microsoft.com/v1.0' + url, { headers: { Authorization: 'Bearer ' + token } });
+  const r = await fetch(url.startsWith('http') ? url : 'https://graph.microsoft.com/v1.0' + url, { headers: { Authorization: 'Bearer ' + token, Prefer: 'outlook.timezone="Europe/London"' } });
   if (r.status === 401 || r.status === 403) throw new Error('That token has expired or doesn’t have Tasks.Read — copy a fresh one from Graph Explorer.');
   if (!r.ok) throw new Error('Microsoft returned an error (' + r.status + '). Try again in a minute.');
   return r.json();
@@ -1211,6 +1223,122 @@ function rowsFromTask(t, l, pos, includeDone) {
   if (steps.length && TYPES[l.type].sub) steps.forEach((c, i) => rows.push(newItem(l, c.displayName, { parent_id: parent.id, done: !!c.isChecked, done_by: c.isChecked ? S.me : null, position: pos + (i + 1) / 1000 })));
   return rows;
 }
+/* ---------- Microsoft To Do sync ---------- */
+function todoRow() {
+  const T = S.todo;
+  const tile = `<span class="tile-icon sm" style="--c:#2564CF">${icon('check', 18)}</span>`;
+  if (DEMO || !T || !T.configured) {
+    return `<div class="row tap" data-a="openImport" data-tab="todo">${tile}<div class="row-main"><div class="row-title">Import from Microsoft To Do</div><div class="row-sub">Whole lists, with dates and steps</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`;
+  }
+  if (!T.connected) {
+    return `<div class="row tap" data-a="todoAuth">${tile}<div class="row-main"><div class="row-title">Connect Microsoft To Do</div><div class="row-sub">Sign in once, then link lists or use #tags</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`;
+  }
+  const a = T.account || {};
+  const sub = a.last_error ? `<span style="color:var(--red)">${esc(a.last_error)}</span>` : a.last_sync ? `Synced ${timeAgo(a.last_sync)} · ${T.links.length} link${T.links.length === 1 ? '' : 's'}` : 'Connected';
+  return `<div class="row tap" data-a="todoOpen">${tile}<div class="row-main"><div class="row-title">Microsoft To Do</div><div class="row-sub">${sub}</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`;
+}
+function todoTargetOptions(s, nameForNew) {
+  const lists = S.data.lists.filter((l) => IMPORTABLE.includes(l.type));
+  return `<option value="new" ${s.target === 'new' ? 'selected' : ''}>${nameForNew ? `New list – ${esc(nameForNew)}` : 'New list'}</option>${lists.map((l) => `<option value="${l.id}" ${s.target === l.id ? 'selected' : ''}>${esc(l.title)}</option>`).join('')}`;
+}
+function todoTargetFields(s, nameForNew) {
+  return `<div class="group"><div class="field"><label>Put into</label><select data-change="todoField" data-f="target">${todoTargetOptions(s, nameForNew)}</select></div>
+    ${s.target === 'new' ? `<div class="field"><label>List type</label><select data-change="todoField" data-f="newType">${IMPORTABLE.map((t) => `<option value="${t}" ${s.newType === t ? 'selected' : ''}>${TYPES[t].name}</option>`).join('')}</select></div>` : ''}</div>`;
+}
+const modeSeg = (s) => `<div class="group" style="margin-top:12px"><div class="field col"><label>How it stays in step</label><div class="seg">${[['0', 'Import only'], ['1', 'Two-way']].map(([v, l]) => `<button class="${(s.twoWay ? '1' : '0') === v ? 'on' : ''}" data-a="todoMode" data-v="${v}">${l}</button>`).join('')}</div></div></div>
+  <p class="hint">${s.twoWay ? 'Changes in either app show up in both — ticks, edits, new items and deletions.' : 'New and changed tasks come across from To Do. Changes here don’t go back to To Do.'}</p>`;
+function todoSheet(s) {
+  const T = S.todo || {};
+  const busyBtn = (label, a, disabled = false) => `<div style="margin-top:16px"><button class="btn" data-a="${a}" ${s.busy || disabled ? 'disabled' : ''}>${s.busy ? esc(s.busy) : label}</button></div>`;
+  if (s.mode === 'home') {
+    const a = T.account || {};
+    const groups = [];
+    for (const k of T.links || []) {
+      const l = getList(k.list_id);
+      const to = l ? esc(l.title) : 'a list';
+      if (k.kind === 'task') {
+        const g = groups.find((x) => x.kind === 'task' && x.list_id === k.list_id);
+        if (g) { g.ids.push(k.id); continue; }
+        groups.push({ kind: 'task', list_id: k.list_id, ids: [k.id], title: `Picked tasks → ${to}`, sub: 'Two-way' });
+      } else if (k.kind === 'tag') groups.push({ kind: 'tag', ids: [k.id], title: `#${esc(k.tag)} → ${to}`, sub: k.two_way ? 'Two-way' : 'Import only' });
+      else groups.push({ kind: 'list', ids: [k.id], title: `${esc(k.todo_list_name || 'To Do list')} → ${to}`, sub: k.two_way ? 'Two-way' : 'Import only' });
+    }
+    groups.forEach((g) => { if (g.kind === 'task') g.title = `${g.ids.length} picked task${g.ids.length === 1 ? '' : 's'} → ${esc(getList(g.list_id)?.title || 'a list')}`; });
+    return head('Microsoft To Do', '<span></span>') + `
+      <div class="group"><div class="row"><span class="tile-icon" style="--c:#2564CF">${icon('check', 22)}</span><div class="row-main" style="cursor:default"><div class="row-title">${esc(a.ms_name || 'Connected')}</div><div class="row-sub">${esc(a.ms_email || '')}</div></div></div>
+        <div class="row"><div class="row-main" style="cursor:default"><div class="row-sub" style="margin:0">${a.last_error ? `<span style="color:var(--red)">${esc(a.last_error)}</span>` : a.last_sync ? `Last synced ${timeAgo(a.last_sync)}. Syncs every 10 minutes and when you open the app.` : 'Not synced yet.'}</div></div>
+        ${a.last_error ? '<button class="link-btn" data-a="todoAuth">Reconnect</button>' : `<button class="link-btn" data-a="todoSync" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Syncing…' : 'Sync now'}</button>`}</div></div>
+      <div class="section-label">Linked</div>
+      <div class="group">${groups.length ? groups.map((g) => `<div class="row tap" data-a="todoUnlink" data-ids="${g.ids.join(',')}"><div class="row-main"><div class="row-title" style="font-size:16px">${g.title}</div><div class="row-sub">${g.sub}</div></div><span class="link-btn" style="color:var(--red);padding:0">Unlink</span></div>`).join('') : '<div class="row"><div class="row-main muted" style="cursor:default">Nothing linked yet</div></div>'}</div>
+      <div class="stack-gap" style="margin-top:16px">
+        <button class="btn secondary" data-a="todoMode2" data-v="link">${icon('list', 20)} Link a whole To Do list</button>
+        <button class="btn secondary" data-a="todoMode2" data-v="pick">${icon('check', 20)} Pick tasks to bring across</button>
+        <button class="btn secondary" data-a="todoMode2" data-v="tag"># Use a tag</button>
+        <button class="btn danger" data-a="todoDisconnect">Disconnect Microsoft To Do</button>
+      </div>
+      <p class="hint">Unlinking or disconnecting stops syncing. Anything already brought across stays in McGaw Lists.</p>`;
+  }
+  const backBtn = '<button class="txt" data-a="todoMode2" data-v="home">Back</button>';
+  if (s.mode === 'link' || s.mode === 'pick') {
+    if (!s.msLists) return head(s.mode === 'link' ? 'Link a list' : 'Pick tasks', backBtn) + '<div class="empty">Loading your To Do lists…</div>';
+    const cur = s.msLists.find((L) => L.id === s.msList);
+    let html = head(s.mode === 'link' ? 'Link a list' : 'Pick tasks', backBtn) + `
+      <div class="section-label" style="margin-top:4px">From To Do</div>
+      <div class="group">${s.msLists.map((L) => `<div class="row tap" data-a="todoChooseList" data-id="${esc(L.id)}"><button class="check ${s.msList === L.id ? 'on' : ''}" style="--c:var(--accent)" tabindex="-1"></button><div class="row-main"><div class="row-title">${esc(L.name)}</div>${L.main ? '<div class="row-sub">Your main Tasks list</div>' : ''}</div></div>`).join('')}</div>`;
+    if (!cur) return html;
+    if (s.mode === 'pick') {
+      if (!s.tasks) return html + '<div class="empty">Loading tasks…</div>';
+      const all = s.tasks.length && s.tasks.every((t) => s.picked.includes(t.id));
+      html += `<div class="section-label"><span>Tasks (${s.tasks.length})</span>${s.tasks.length ? `<button data-a="todoPickAll">${all ? 'Clear' : 'Select all'}</button>` : ''}</div>
+        <div class="group">${s.tasks.length ? s.tasks.map((t) => `<div class="row tap" data-a="todoPickTask" data-id="${esc(t.id)}"><button class="check ${s.picked.includes(t.id) ? 'on' : ''}" style="--c:var(--accent)" tabindex="-1"></button><div class="row-main"><div class="row-title" style="font-size:16px">${esc(t.title)}</div>${t.due || t.important ? `<div class="row-meta">${t.important ? `<span class="flag">${icon('flag', 13, 2.4)}</span>` : ''}${t.due ? `<span class="pill">${fmtDue(t.due)}</span>` : ''}</div>` : ''}</div></div>`).join('') : '<div class="row"><div class="row-main muted">No open tasks in this list</div></div>'}</div>
+        <div class="section-label">Where to</div>${todoTargetFields(s, cur.name)}
+        <div class="group" style="margin-top:12px"><div class="field tap" data-a="todoKeep"><label>Keep them linked</label><span style="flex:1"></span><span class="switch ${s.keepLinked ? 'on' : ''}"></span></div></div>
+        <p class="hint">${s.keepLinked ? 'Ticks and edits stay in step both ways for these tasks.' : 'A one-off copy. To Do won’t change afterwards.'}</p>
+        ${busyBtn(`Bring across ${s.picked.length || ''} task${s.picked.length === 1 ? '' : 's'}`, 'todoDoPick', !s.picked.length)}`;
+      return html;
+    }
+    html += `<div class="section-label">Where to</div>${todoTargetFields(s, cur.name)}${modeSeg(s)}${busyBtn('Link list', 'todoDoLink')}`;
+    return html;
+  }
+  if (s.mode === 'tag') {
+    return head('Use a tag', backBtn) + `
+      <p class="hint" style="margin:0 4px 12px">Add a tag to any task in To Do, from any list, and it appears here automatically. Siri works too: “Add ‘fix the gate #jobs’ to my To Do”.</p>
+      <div class="group"><div class="field"><label>Tag</label><input id="todo-tag" value="${esc(s.tag || '')}" placeholder="#family" autocapitalize="off" autocorrect="off" data-input="todoTag"></div></div>
+      <div class="section-label">Where to</div>${todoTargetFields(s, s.tag ? s.tag.replace(/^#/, '') : '')}${modeSeg(s)}${busyBtn('Save tag', 'todoDoTag')}`;
+  }
+  return head('Microsoft To Do', '<span></span>');
+}
+let todoLoading = null, lastTodoSync = 0;
+async function loadTodo(runSync) {
+  if (DEMO || !S.me) return;
+  if (todoLoading) return todoLoading;
+  todoLoading = (async () => {
+    try {
+      S.todo = await store.todo('overview');
+      render();
+      const stale = S.todo.connected && S.todo.links.length && Date.now() - lastTodoSync > 3 * 60 * 1000;
+      if (runSync && stale) {
+        lastTodoSync = Date.now();
+        const r = await store.todo('sync').catch((e) => { console.warn(e); return null; });
+        S.todo = await store.todo('overview');
+        if (r && r.changes) await reload(); else render();
+      }
+    } catch (e) { console.warn('To Do', e.message); S.todo = S.todo || null; }
+    todoLoading = null;
+  })();
+  return todoLoading;
+}
+async function todoRun(label, fn) {
+  const s = topSheet();
+  if (s) { s.busy = label; renderSheets(true); }
+  try { return await fn(); }
+  catch (e) { toast(e.message); return null; }
+  finally { if (s) { s.busy = false; renderSheets(true); } }
+}
+function todoTargetPayload(s, name) {
+  return s.target === 'new' ? { listId: 'new', newTitle: name, newType: s.newType } : { listId: s.target };
+}
+
 function installSheet() {
   return head('Add to Home Screen', '<span></span>') + `
     <div class="group" style="margin-top:6px"><ol class="steps">
@@ -1490,6 +1618,78 @@ const A = {
   },
 
   push: enablePush,
+  todoAuth: async () => {
+    const r = await todoRun('Opening Microsoft…', () => store.todo('start'));
+    if (r && r.url) location.href = r.url;
+  },
+  todoOpen: () => { openSheet({ kind: 'todo', mode: 'home' }); loadTodo(false); },
+  todoMode: (el) => { topSheet().twoWay = el.dataset.v === '1'; renderSheets(true); },
+  todoMode2: async (el) => {
+    const s = topSheet();
+    Object.assign(s, { mode: el.dataset.v, msList: null, tasks: null, picked: [], target: 'new', newType: 'todo', twoWay: el.dataset.v === 'tag', keepLinked: true, tag: '' });
+    renderSheets(true);
+    if (s.mode === 'link' || s.mode === 'pick') {
+      const r = await todoRun(null, () => store.todo('lists'));
+      s.msLists = r ? r.lists : [];
+      renderSheets(true);
+    }
+    if (s.mode === 'tag') setTimeout(() => document.getElementById('todo-tag')?.focus(), 60);
+  },
+  todoChooseList: async (el) => {
+    const s = topSheet();
+    s.msList = el.dataset.id;
+    const L = s.msLists.find((x) => x.id === s.msList);
+    const match = S.data.lists.find((l) => IMPORTABLE.includes(l.type) && l.title.toLowerCase() === L.name.toLowerCase());
+    s.target = match ? match.id : 'new';
+    s.newType = guessType(L.name);
+    s.tasks = null; s.picked = [];
+    renderSheets(true);
+    if (s.mode === 'pick') {
+      const r = await todoRun(null, () => store.todo('tasks', { todoListId: s.msList }));
+      s.tasks = r ? r.tasks : [];
+      renderSheets(true);
+    }
+  },
+  todoPickTask: (el) => { const s = topSheet(), id = el.dataset.id; s.picked = s.picked.includes(id) ? s.picked.filter((x) => x !== id) : [...s.picked, id]; renderSheets(true); },
+  todoPickAll: () => { const s = topSheet(); s.picked = s.tasks.every((t) => s.picked.includes(t.id)) ? [] : s.tasks.map((t) => t.id); renderSheets(true); },
+  todoKeep: () => { const s = topSheet(); s.keepLinked = !s.keepLinked; renderSheets(true); },
+  todoDoLink: async () => {
+    const s = topSheet(), L = s.msLists.find((x) => x.id === s.msList);
+    const r = await todoRun(`Bringing across ${L.name}…`, () => store.todo('link', { todoListId: L.id, todoListName: L.name, twoWay: !!s.twoWay, ...todoTargetPayload(s, L.name) }));
+    if (!r) return;
+    await reload(); S.sheets = []; await loadTodo(false);
+    toast(`Linked ${L.name}`); go('#/list/' + r.listId);
+  },
+  todoDoPick: async () => {
+    const s = topSheet(), L = s.msLists.find((x) => x.id === s.msList);
+    const r = await todoRun('Bringing tasks across…', () => store.todo('import', { todoListId: L.id, todoListName: L.name, taskIds: s.picked, keepLinked: !!s.keepLinked, ...todoTargetPayload(s, L.name) }));
+    if (!r) return;
+    await reload(); S.sheets = []; await loadTodo(false);
+    toast(`Brought across ${s.picked.length} task${s.picked.length === 1 ? '' : 's'}`); go('#/list/' + r.listId);
+  },
+  todoDoTag: async () => {
+    const s = topSheet(), tag = (s.tag || '').trim().replace(/^#/, '').replace(/\s+/g, '');
+    if (!tag) return toast('Type a tag first, e.g. family');
+    const r = await todoRun('Looking for #' + tag + '…', () => store.todo('tag', { tag, twoWay: !!s.twoWay, ...todoTargetPayload(s, tag.charAt(0).toUpperCase() + tag.slice(1)) }));
+    if (!r) return;
+    await reload(); S.sheets = []; await loadTodo(false);
+    toast(r.changes ? `Found ${r.changes} #${tag} task${r.changes === 1 ? '' : 's'}` : `Saved — tag tasks with #${tag} in To Do`); go('#/list/' + r.listId);
+  },
+  todoSync: async () => {
+    const r = await todoRun('Syncing…', () => store.todo('sync'));
+    lastTodoSync = Date.now();
+    if (r) { await reload(); await loadTodo(false); renderSheets(true); toast(r.changes ? `Synced ${r.changes} change${r.changes === 1 ? '' : 's'}` : 'Everything’s up to date'); }
+  },
+  todoUnlink: async (el) => {
+    if (!await ask('Stop syncing this? Anything already brought across stays.', 'Unlink', true)) return;
+    for (const id of el.dataset.ids.split(',')) await todoRun('Unlinking…', () => store.todo('unlink', { linkId: id }));
+    await loadTodo(false); renderSheets(true);
+  },
+  todoDisconnect: async () => {
+    if (!await ask('Disconnect Microsoft To Do? Syncing stops. Lists already brought across stay.', 'Disconnect', true)) return;
+    await todoRun('Disconnecting…', () => store.todo('disconnect'));
+    S.sheets = []; await loadTodo(false); render();
+  },
   openImport: (el) => {
     const targets = S.data.lists.filter((l) => IMPORTABLE.includes(l.type));
     if (topSheet()?.kind === 'listMenu') S.sheets.pop();
@@ -1633,6 +1833,7 @@ const CHANGE = {
   bgFile: (el) => { const f = el.files && el.files[0]; if (f) setBackground(f); el.value = ''; },
   todoTarget: (el) => { topSheet().lists[+el.dataset.i].target = el.value; renderSheets(true); },
   todoType: (el) => { topSheet().lists[+el.dataset.i].type = el.value; },
+  todoField: (el) => { topSheet()[el.dataset.f] = el.value; renderSheets(true); },
   renameList: (el) => { const v = el.value.trim(); if (v) upd('lists', { id: el.dataset.id }, { title: v }); },
 };
 const INPUT = {
@@ -1642,6 +1843,7 @@ const INPUT = {
     const n = parsePasted(el.value).length, c = document.getElementById('imp-count');
     if (c) c.textContent = n ? `${n} item${n === 1 ? '' : 's'} ready to add` : 'Long-press a message in WhatsApp → Copy, then paste it here.';
   },
+  todoTag: (el) => { topSheet().tag = el.value; },
   importField: (el) => { topSheet()[el.dataset.f] = el.value; },
   bgDim: (el) => { setPref('dim', el.value); const bg = document.getElementById('bg'); if (bg) bg.style.setProperty('--dim', String(el.value / 100)); },
   mealField: (el) => { topSheet().draft[el.dataset.f] = el.value; },
@@ -1778,6 +1980,7 @@ async function start() {
     render();
     await reload();
     store.subscribe(scheduleReload);
+    loadTodo(true);
   } catch (e) {
     console.error(e);
     showLogin();
@@ -1786,7 +1989,14 @@ async function start() {
 }
 
 window.addEventListener('hashchange', () => { S.sheets = []; render(); window.scrollTo(0, 0); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me) reload(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me) { reload(); loadTodo(true); } });
+(() => {
+  const q = new URLSearchParams(location.search).get('todo');
+  if (!q) return;
+  history.replaceState(null, '', location.pathname + (location.hash || '#/family'));
+  const msg = { connected: 'Microsoft To Do connected — now link a list', cancelled: 'Microsoft sign-in was cancelled', expired: 'That took too long — try connecting again', error: 'Couldn’t connect to Microsoft — try again' }[q];
+  if (msg) setTimeout(() => { toast(msg); if (q === 'connected') setTimeout(() => A.todoOpen(), 900); }, 900);
+})();
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW', e));
   navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.url) location.hash = e.data.url.replace(/^.*#/, '#'); });
