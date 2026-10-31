@@ -35,6 +35,26 @@ const IC = {
   trash: '<path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5l1-12.5M9 7V4.5h6V7"/>',
   cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
 };
+const EYE = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 5.6A10 10 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3.2 3.9M6.6 6.7C3.9 8.5 2.5 12 2.5 12S6 18.5 12 18.5c1.8 0 3.3-.5 4.6-1.2M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+const pwRow = (id, ph, ac) => `<label class="login-row" for="${id}"><input id="${id}" type="password" placeholder="${ph}" autocomplete="${ac}" autocapitalize="off" autocorrect="off" spellcheck="false" required><button type="button" class="eye" data-eye="${id}" aria-label="Show password">${EYE}</button></label>`;
+function wireEyes(root = document) {
+  root.querySelectorAll('[data-eye]').forEach((b) => {
+    if (b.dataset.wired) return;
+    b.dataset.wired = '1';
+    b.addEventListener('mousedown', (e) => e.preventDefault()); // keep the keyboard up
+    b.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+    const flip = () => {
+      const inp = document.getElementById(b.dataset.eye);
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      b.innerHTML = show ? EYE_OFF : EYE;
+      b.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    };
+    b.addEventListener('touchend', (e) => { e.preventDefault(); flip(); });
+    b.addEventListener('click', flip);
+  });
+}
 const icon = (n, s = 22, w = 1.9) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${IC[n]}</svg>`;
 
 const TYPES = {
@@ -795,6 +815,7 @@ function renderSheets(force) {
     return `<div class="scrim${cls}" data-a="closeSheet" style="z-index:${40 + i * 2}"></div><div class="sheet${cls}" style="z-index:${41 + i * 2}"><div class="grab"></div>${html}</div>`;
   }).join('');
   host.querySelectorAll('.sheet').forEach((el, i) => { if (!S.sheets[i].fresh && scrolls[i]) el.scrollTop = scrolls[i]; });
+  wireEyes(host);
   const fresh = S.sheets.find((s) => s.fresh && s.focus);
   S.sheets.forEach((s) => { s.fresh = false; });
   if (fresh) setTimeout(() => { const el = document.getElementById(fresh.focus); if (el) el.focus(); }, 60);
@@ -1015,7 +1036,7 @@ function installSheet() {
 }
 function passwordSheet() {
   return head('Set a new password', '<span></span>', '<span></span>') + `
-    <div class="login" style="min-height:0;padding:10px 0"><div class="group"><input id="pw-new" type="password" placeholder="New password (8+ characters)" autocomplete="new-password"></div>
+    <div class="login" style="min-height:0;padding:10px 0"><div class="group">${pwRow('pw-new', 'New password (8+ characters)', 'new-password')}</div>
     <div style="margin-top:14px"><button class="btn" data-a="savePassword">Save password</button></div></div>`;
 }
 
@@ -1444,7 +1465,7 @@ function showLogin() {
       <div class="demo-who">${FAMILY.map((m) => `<button data-login="${m.id}">${`<span class="av" style="--c:${m.colour};--s:44px">${m.name[0]}</span>`}${m.name}</button>`).join('')}</div>
       <p class="hint" style="text-align:center;margin-top:18px">Demo mode: nothing is shared yet and everything stays on this device. Connect Supabase (see the setup guide) to sync between your iPhones.</p>`
     : `
-      <form id="login-form"><div class="group"><input id="email" type="email" placeholder="Email" autocomplete="username" autocapitalize="off" required><input id="password" type="password" placeholder="Password" autocomplete="current-password" required></div>
+      <form id="login-form" novalidate><div class="group"><label class="login-row" for="email"><input id="email" type="email" inputmode="email" placeholder="Email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required></label>${pwRow('password', 'Password', 'current-password')}</div>
       <div style="margin-top:16px"><button class="btn" type="submit" id="login-btn">Sign in</button></div></form>
       <div class="err" id="login-err"></div>
       <button class="link-btn" style="display:block;margin:6px auto 0" id="forgot">Forgotten password?</button>`}
@@ -1452,6 +1473,7 @@ function showLogin() {
   if (DEMO) {
     document.querySelectorAll('[data-login]').forEach((b) => b.addEventListener('click', async () => { await store.signInAs(b.dataset.login); start(); }));
   } else {
+    wireEyes();
     $('#login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = $('#login-btn'); btn.disabled = true; btn.textContent = 'Signing in…';

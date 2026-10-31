@@ -67,7 +67,7 @@ body {
   min-height: 100vh;
 }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
-input, textarea, select { font: inherit; color: var(--label); }
+input, textarea, select { font: inherit; color: var(--label); -webkit-user-select: text; user-select: text; touch-action: manipulation; }
 input::placeholder, textarea::placeholder { color: var(--label3); }
 svg { display: block; }
 
@@ -270,8 +270,11 @@ h2.section { font-size: 20px; font-weight: 700; margin: 26px 4px 8px; display: f
 .logo { width: 84px; height: 84px; border-radius: 20px; margin: 0 auto 18px; box-shadow: 0 10px 30px rgba(10,132,255,.25); }
 .login h1 { text-align: center; font-size: 30px; margin: 0 0 6px; }
 .login p.sub { text-align: center; color: var(--label2); margin: 0 0 28px; }
-.login .group input { width: 100%; border: 0; outline: 0; background: transparent; padding: 15px 16px; }
-.login .group input + input { border-top: .5px solid var(--sep); }
+.login-row { display: flex; align-items: center; min-height: 52px; cursor: text; position: relative; }
+.login-row + .login-row { border-top: .5px solid var(--sep); }
+.login-row input { flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; padding: 15px 16px; font-size: 17px; }
+.eye { flex: none; width: 52px; height: 52px; display: grid; place-items: center; color: var(--label2); }
+.eye:active { color: var(--accent); }
 .err { color: var(--red); font-size: 14px; text-align: center; margin: 12px 0 0; min-height: 18px; }
 .demo-who { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
 .demo-who button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px; background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); font-size: 14px; font-weight: 600; }
