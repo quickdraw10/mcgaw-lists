@@ -328,3 +328,9 @@ body.has-bg .eyebrow, body.has-bg .section-label, body.has-bg .hint { text-shado
 .field.col label.btn { color: var(--accent); font-size: 15px; min-width: 0; }
 .field.col label.btn.danger { color: var(--red); }
 .field .dim-row input[type=range] { -webkit-appearance: auto; appearance: auto; text-align: left; padding: 0; background: none; flex: 1; }
+
+/* ---------- Import ---------- */
+.imp-row + .imp-row { border-top: .5px solid var(--sep); }
+.imp-row .row::before { display: none; }
+.imp-opts { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 12px 50px; }
+.imp-opts select { width: 100%; padding: 9px 10px; border-radius: 9px; border: 0; background: var(--fill); font-size: 15px; -webkit-appearance: none; appearance: none; }

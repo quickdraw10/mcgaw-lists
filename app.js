@@ -147,11 +147,11 @@ const AISLE_WORDS = {
   'Meat & fish': 'chicken beef mince pork lamb bacon sausage ham turkey steak fish salmon cod tuna prawn haddock',
   'Dairy & eggs': 'milk butter cheese cheddar yog yoghurt yogurt cream egg creme crème mozzarella parmesan feta halloumi',
   'Chilled': 'hummus houmous dip pesto coleslaw pizza fresh pasta quiche',
-  'Frozen': 'frozen ice chips fish fingers waffle',
+  'Frozen': 'frozen ice_cream ice_lolly chips fish_fingers waffle peas_frozen',
   'Food cupboard': 'pasta rice flour sugar oil vinegar sauce ketchup mayo mustard stock cereal oats porridge tin tinned beans soup spice salt honey jam peanut nutella noodle lentil chickpea tomatoes coffee tea',
   'Drinks': 'juice water squash cola lemonade wine beer lager gin prosecco tonic',
   'Snacks': 'crisp biscuit chocolate sweets popcorn nuts bar',
-  'Household': 'kitchen roll toilet roll loo bin bag washing up liquid detergent fabric softener dishwasher tablet foil cling bleach sponge battery light bulb',
+  'Household': 'kitchen_roll toilet_roll loo bin_bag washing up liquid detergent fabric softener dishwasher tablet foil cling bleach sponge battery light bulb',
   'Toiletries': 'shampoo conditioner soap shower gel toothpaste toothbrush deodorant razor plaster paracetamol ibuprofen tissues cotton sun cream suncream',
 };
 const PACK_ESSENTIALS = ['Passport', 'Phone & charger', 'Toothbrush', 'Underwear', 'Socks', 'Pyjamas', 'T-shirts', 'Shorts / trousers', 'Jumper or hoodie', 'Swimwear', 'Sunglasses', 'Headphones', 'Any medication'];
@@ -192,16 +192,15 @@ function timeAgo(ts) {
   return fmtDay(new Date(ts));
 }
 const money = (n) => '£' + (Math.round(n * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+const AISLE_PAIRS = Object.entries(AISLE_WORDS).flatMap(([a, ws]) => ws.split(' ').filter(Boolean).map((w) => [a, w])).sort((x, y) => y[1].length - x[1].length);
 function guessAisle(text) {
   const t = ' ' + text.toLowerCase() + ' ';
-  for (const [aisle, words] of Object.entries(AISLE_WORDS)) {
-    for (const w of words.split(' ')) if (w && t.includes(' ' + w)) return aisle;
-  }
+  for (const [aisle, w] of AISLE_PAIRS) if (t.includes(' ' + w.replace(/_/g, ' '))) return aisle;
   return 'Other';
 }
 function parseQty(s) {
   const m = s.match(/^(\d+(?:\.\d+)?\s*(?:x|kg|g|ml|l|ltr|pk|packs?|tins?|bottles?|bags?|boxes?)?)\s+(.+)$/i);
-  return m ? { qty: m[1].replace(/\s+/g, ''), text: m[2] } : { qty: '', text: s };
+  return m ? { qty: m[1].replace(/\s+/g, ''), text: m[2].charAt(0).toUpperCase() + m[2].slice(1) } : { qty: '', text: s };
 }
 const greet = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
 const sortItems = (a, b) => a.position - b.position;
@@ -669,6 +668,11 @@ function familyView() {
       <div class="row tap" data-a="push"><span class="tile-icon sm" style="--c:#FF3B30">${icon('bell', 18)}</span><div class="row-main"><div class="row-title">Notifications</div><div class="row-sub">${pushOn ? 'On for this iPhone' : standalone ? 'Tap to turn on' : 'Add to Home Screen first'}</div></div><span class="switch ${pushOn ? 'on' : ''}"></span></div>
       <div class="row tap" data-a="install"><span class="tile-icon sm" style="--c:#8E8E93">${icon('plus', 18, 2.4)}</span><div class="row-main"><div class="row-title">Add to Home Screen</div><div class="row-sub">${standalone ? 'Installed' : 'How to install the app'}</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
     </div>
+    <div class="section-label">Bring in your lists</div>
+    <div class="group">
+      <div class="row tap" data-a="openImport" data-tab="todo"><span class="tile-icon sm" style="--c:#2564CF">${icon('check', 18)}</span><div class="row-main"><div class="row-title">Import from Microsoft To Do</div><div class="row-sub">Whole lists, with dates and steps</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
+      <div class="row tap" data-a="openImport" data-tab="paste"><span class="tile-icon sm" style="--c:#25A366">${icon('list', 18)}</span><div class="row-main"><div class="row-title">Paste a list</div><div class="row-sub">From WhatsApp, Notes, an email…</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
+    </div>
     <div class="section-label">Appearance</div>
     <div class="group">
       <div class="field"><label>Mode</label><div class="seg" style="flex:1">${[['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([k, v]) => `<button class="${pref('mode', 'system') === k ? 'on' : ''}" data-a="setMode" data-v="${k}">${v}</button>`).join('')}</div></div>
@@ -920,6 +924,7 @@ function sheetHtml(s) {
     case 'essentials': return essentialsSheet(s);
     case 'install': return installSheet();
     case 'password': return passwordSheet();
+    case 'import': return importSheet(s);
   }
   return '';
 }
@@ -976,6 +981,7 @@ function listMenuSheet(s) {
   }
   html += '<div class="stack-gap" style="margin-top:22px">';
   html += `<button class="btn secondary" data-a="share" data-id="${l.id}">${icon('people', 20)} Sharing</button>`;
+  if (!['meals', 'notice'].includes(l.type)) html += `<button class="btn secondary" data-a="openImport" data-tab="paste" data-id="${l.id}">${icon('list', 20)} Paste in items</button>`;
   if (admin && l.type === 'packing') html += `<button class="btn secondary" data-a="unpack" data-id="${l.id}">Unpack everything (reuse list)</button>`;
   if (admin && ['shopping', 'todo', 'work'].includes(l.type)) html += `<button class="btn secondary" data-a="clearDone" data-id="${l.id}">Clear completed items</button>`;
   if (isOwner(l)) html += `<button class="btn danger" data-a="deleteList" data-id="${l.id}">${icon('trash', 20)} Delete list</button>`;
@@ -1109,6 +1115,102 @@ function essentialsSheet(s) {
     <div class="section-label">Shared bag gets</div><p class="hint" style="margin-top:0">${PACK_SHARED.join(' · ')}</p>`;
 }
 
+/* ---------- Import (Microsoft To Do / paste) ---------- */
+const IMPORTABLE = ['todo', 'work', 'shopping', 'packing', 'christmas'];
+const GRAPH_EXPLORER = 'https://developer.microsoft.com/en-us/graph/graph-explorer';
+function parsePasted(text) {
+  let lines = text.replace(/\r/g, '').split('\n');
+  if (lines.filter((x) => x.trim()).length === 1 && /,/.test(text)) lines = text.split(',');
+  const out = [];
+  for (let raw of lines) {
+    let t = raw
+      .replace(/^\s*\[?\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4},?\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]m)?\]?\s*(?:-\s*)?[^:\n]{1,40}:\s*/i, '') // WhatsApp "[31/10/2026, 12:03] Louise:"
+      .trim();
+    if (!t) continue;
+    let done = false;
+    if (/^(?:[✓✔☑✅]|\[[xX]\])/.test(t)) done = true;
+    t = t.replace(/^(?:[-*•·◦▪●○◯□☐✓✔☑✅]|\[[ xX]?\]|\d+[.)])\s*/, '').trim();
+    if (!t || /^(completed|done|to do|tasks)\s*:?$/i.test(t)) continue;
+    out.push({ text: t.slice(0, 300), done });
+  }
+  return out;
+}
+function importSheet(s) {
+  const targets = S.data.lists.filter((l) => IMPORTABLE.includes(l.type));
+  const tabs = `<div class="seg" style="margin:4px 0 14px">${[['todo', 'Microsoft To Do'], ['paste', 'Paste a list']].map(([k, v]) => `<button class="${s.tab === k ? 'on' : ''}" data-a="importTab" data-v="${k}">${v}</button>`).join('')}</div>`;
+  let html = head('Import', '<span></span>') + tabs;
+  if (s.tab === 'paste') {
+    const n = parsePasted(s.text || '').length;
+    html += `<div class="group"><div class="field"><label>Add to</label><select data-input="importField" data-f="target">${targets.map((l) => `<option value="${l.id}" ${s.target === l.id ? 'selected' : ''}>${esc(l.title)}</option>`).join('')}</select></div></div>
+      <div class="group" style="margin-top:10px"><textarea class="textarea" id="imp-text" style="min-height:200px" placeholder="Paste here — one item per line, or a comma-separated list.&#10;&#10;WhatsApp names and times, bullets and tick boxes are removed for you." data-input="importText">${esc(s.text || '')}</textarea></div>
+      <p class="hint" id="imp-count">${n ? `${n} item${n === 1 ? '' : 's'} ready to add` : 'Long-press a message in WhatsApp → Copy, then paste it here.'}</p>
+      <div style="margin-top:14px"><button class="btn" data-a="importPaste" ${targets.length ? '' : 'disabled'}>Add items</button></div>
+      ${targets.length ? '' : '<p class="hint">Make a list first, then come back to paste into it.</p>'}`;
+    return html;
+  }
+  // Microsoft To Do
+  if (!s.lists) {
+    html += `<div class="group"><ol class="steps">
+        <li>Open <a href="${GRAPH_EXPLORER}" target="_blank" rel="noopener" style="color:var(--accent)">Microsoft Graph Explorer ↗</a>. It’s easiest on a computer.</li>
+        <li>Tap <b>Sign in</b> (top right) and use the Microsoft account your To Do lists are in.</li>
+        <li>Open the <b>Modify permissions</b> tab, find <b>Tasks.Read</b> and tap <b>Consent</b>, then <b>Accept</b>.</li>
+        <li>Tap <b>Run query</b> once, then open the <b>Access token</b> tab and tap the copy button.</li>
+        <li>Paste it below. It works for about an hour and isn’t saved anywhere.</li>
+      </ol></div>
+      <div class="group" style="margin-top:12px"><textarea class="textarea" id="imp-token" style="min-height:90px;font-size:13px;font-family:ui-monospace,Menlo,monospace" placeholder="Paste the access token here" data-input="importField" data-f="token" autocapitalize="off" autocorrect="off" spellcheck="false">${esc(s.token || '')}</textarea></div>
+      <div style="margin-top:14px"><button class="btn" data-a="todoConnect" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Connecting…' : 'Show my To Do lists'}</button></div>
+      <p class="hint">Tip: open McGaw Lists on the same computer (same web address) and sign in there, so you can copy and paste easily.</p>`;
+    return html;
+  }
+  const opt = (L) => `<option value="new" ${L.target === 'new' ? 'selected' : ''}>New list: “${esc(L.displayName)}”</option>${targets.map((l) => `<option value="${l.id}" ${L.target === l.id ? 'selected' : ''}>Add to ${esc(l.title)}</option>`).join('')}`;
+  const picked = s.lists.filter((L) => L.pick).length;
+  html += `<p class="hint" style="margin:0 4px 10px">Tick the lists to bring across and choose where each one goes.</p>
+    <div class="group">${s.lists.map((L, i) => `<div class="imp-row ${L.pick ? 'on' : ''}">
+      <div class="row tap" data-a="todoPick" data-i="${i}"><button class="check ${L.pick ? 'on' : ''}" style="--c:var(--accent)" tabindex="-1"></button><div class="row-main"><div class="row-title">${esc(L.displayName)}</div>${L.wellknownListName === 'defaultList' ? '<div class="row-sub">Your main Tasks list</div>' : ''}</div></div>
+      ${L.pick ? `<div class="imp-opts"><select data-change="todoTarget" data-i="${i}">${opt(L)}</select>${L.target === 'new' ? `<select data-change="todoType" data-i="${i}">${IMPORTABLE.map((t) => `<option value="${t}" ${L.type === t ? 'selected' : ''}>As a ${TYPES[t].name.toLowerCase()} list</option>`).join('')}</select>` : ''}</div>` : ''}
+    </div>`).join('')}</div>
+    <div class="group" style="margin-top:12px"><div class="field tap" data-a="todoDone"><label>Include completed tasks</label><span style="flex:1"></span><span class="switch ${s.includeDone ? 'on' : ''}"></span></div></div>
+    <div style="margin-top:14px"><button class="btn" data-a="todoImport" ${picked && !s.busy ? '' : 'disabled'}>${s.busy ? esc(s.busy) : `Import ${picked || ''} list${picked === 1 ? '' : 's'}`}</button></div>
+    <p class="hint">New lists start as just yours. Use Sharing afterwards to choose who else sees them.</p>`;
+  return html;
+}
+async function graph(token, url) {
+  const r = await fetch(url.startsWith('http') ? url : 'https://graph.microsoft.com/v1.0' + url, { headers: { Authorization: 'Bearer ' + token } });
+  if (r.status === 401 || r.status === 403) throw new Error('That token has expired or doesn’t have Tasks.Read — copy a fresh one from Graph Explorer.');
+  if (!r.ok) throw new Error('Microsoft returned an error (' + r.status + '). Try again in a minute.');
+  return r.json();
+}
+async function graphAll(token, url) {
+  const out = [];
+  for (let next = url; next;) { const j = await graph(token, next); out.push(...(j.value || [])); next = j['@odata.nextLink']; }
+  return out;
+}
+const stripHtml = (h) => { const d = document.createElement('div'); d.innerHTML = h; return (d.textContent || '').replace(/\n{3,}/g, '\n\n').trim(); };
+function guessType(name) {
+  const n = name.toLowerCase();
+  if (/shop|grocer|tesco|sainsbury|asda|aldi|lidl|waitrose|morrisons|food/.test(n)) return 'shopping';
+  if (/work|job|office|cloudbass|project/.test(n)) return 'work';
+  if (/christmas|xmas|gift|present|birthday/.test(n)) return 'christmas';
+  if (/pack|holiday|trip|travel/.test(n)) return 'packing';
+  return 'todo';
+}
+function rowsFromTask(t, l, pos, includeDone) {
+  const done = t.status === 'completed';
+  if (done && !includeDone) return [];
+  const notesRaw = t.body?.content ? (t.body.contentType === 'html' ? stripHtml(t.body.content) : t.body.content.trim()) : '';
+  const extra = { done, done_by: done ? S.me : null, done_at: done ? (t.completedDateTime?.dateTime ? t.completedDateTime.dateTime.slice(0, 19) + 'Z' : new Date().toISOString()) : null, due: t.dueDateTime?.dateTime ? t.dueDateTime.dateTime.slice(0, 10) : null, priority: t.importance === 'high' ? 1 : 0, notes: notesRaw || null, position: pos };
+  let text = (t.title || '').trim() || 'Untitled';
+  if (l.type === 'shopping') { const p = parseQty(text); text = p.text; extra.quantity = p.qty || null; extra.category = guessAisle(p.text); }
+  if (l.type === 'work') extra.status = done ? 'done' : 'todo';
+  if (l.type === 'packing') extra.data = { bag: 'shared' };
+  if (l.type === 'christmas') extra.data = { status: done ? 'wrapped' : 'idea' };
+  const steps = t.checklistItems || [];
+  if (steps.length && !TYPES[l.type].sub) extra.notes = [notesRaw, steps.map((c) => (c.isChecked ? '✓ ' : '• ') + c.displayName).join('\n')].filter(Boolean).join('\n\n');
+  const parent = newItem(l, text, extra);
+  const rows = [parent];
+  if (steps.length && TYPES[l.type].sub) steps.forEach((c, i) => rows.push(newItem(l, c.displayName, { parent_id: parent.id, done: !!c.isChecked, done_by: c.isChecked ? S.me : null, position: pos + (i + 1) / 1000 })));
+  return rows;
+}
 function installSheet() {
   return head('Add to Home Screen', '<span></span>') + `
     <div class="group" style="margin-top:6px"><ol class="steps">
@@ -1388,6 +1490,80 @@ const A = {
   },
 
   push: enablePush,
+  openImport: (el) => {
+    const targets = S.data.lists.filter((l) => IMPORTABLE.includes(l.type));
+    if (topSheet()?.kind === 'listMenu') S.sheets.pop();
+    if (DEMO && el.dataset.tab === 'todo') { /* allowed: shows the steps */ }
+    openSheet({ kind: 'import', tab: el.dataset.tab || 'todo', target: el.dataset.id || targets[0]?.id, text: '', token: '', focus: el.dataset.tab === 'paste' ? 'imp-text' : null });
+  },
+  importTab: (el) => { topSheet().tab = el.dataset.v; renderSheets(true); },
+  importPaste: async () => {
+    const s = topSheet(), l = getList(s.target);
+    if (!l) return toast('Choose a list to add to');
+    const parsed = parsePasted(s.text || '');
+    if (!parsed.length) return toast('Paste some items first');
+    const existing = new Set(itemsOf(l.id).filter((i) => !i.done).map((i) => i.text.toLowerCase()));
+    let pos = Date.now() / 1000;
+    const rows = [];
+    for (const p of parsed) {
+      let text = p.text, extra = { done: p.done, done_by: p.done ? S.me : null, position: (pos += 0.001) };
+      if (l.type === 'shopping') { const q = parseQty(text); text = q.text; extra.quantity = q.qty || null; extra.category = guessAisle(q.text); }
+      if (l.type === 'work') extra.status = p.done ? 'done' : 'todo';
+      if (l.type === 'packing') extra.data = { bag: ui('bag-' + l.id, S.me) };
+      if (l.type === 'christmas') extra.data = { status: 'idea', for: ui('for-' + l.id, null) };
+      if (existing.has(text.toLowerCase())) continue;
+      existing.add(text.toLowerCase());
+      rows.push(newItem(l, text, extra));
+    }
+    S.sheets = [];
+    if (rows.length) await ins('items', rows);
+    toast(rows.length ? `Added ${rows.length} item${rows.length === 1 ? '' : 's'} to ${l.title}` : 'Those are already on the list');
+    go('#/list/' + l.id);
+  },
+  todoConnect: async () => {
+    const s = topSheet();
+    s.token = (s.token || '').trim().replace(/^bearer\s+/i, '').replace(/^"|"$/g, '');
+    if (s.token.length < 50) return toast('Paste the access token from Graph Explorer first');
+    s.busy = true; renderSheets(true);
+    try {
+      const lists = await graphAll(s.token, '/me/todo/lists');
+      const names = new Map(S.data.lists.filter((l) => IMPORTABLE.includes(l.type)).map((l) => [l.title.toLowerCase(), l.id]));
+      s.lists = lists.filter((L) => L.wellknownListName !== 'flaggedEmails').map((L) => ({ ...L, pick: false, target: names.get(L.displayName.toLowerCase()) || 'new', type: guessType(L.displayName) }));
+      if (!s.lists.length) toast('No To Do lists found on that account');
+    } catch (e) { toast(e.message); }
+    s.busy = false; renderSheets(true);
+  },
+  todoPick: (el) => { const L = topSheet().lists[+el.dataset.i]; L.pick = !L.pick; renderSheets(true); },
+  todoDone: () => { const s = topSheet(); s.includeDone = !s.includeDone; renderSheets(true); },
+  todoImport: async () => {
+    const s = topSheet();
+    const chosen = s.lists.filter((L) => L.pick);
+    let lists = 0, tasks = 0;
+    try {
+      for (const L of chosen) {
+        s.busy = `Importing ${L.displayName}…`; renderSheets(true);
+        const todo = await graphAll(s.token, `/me/todo/lists/${encodeURIComponent(L.id)}/tasks?$expand=checklistItems&$top=100`);
+        let l = L.target === 'new' ? null : getList(L.target);
+        if (!l) {
+          l = { id: uid(), type: L.type, title: L.displayName, colour: TYPES[L.type].colour, owner: S.me, settings: {}, created_at: new Date().toISOString() };
+          await ins('lists', l);
+        }
+        const existing = new Set(itemsOf(l.id).map((i) => i.text.toLowerCase()));
+        let pos = Date.now() / 1000;
+        const rows = [];
+        todo.sort((a, b) => (a.createdDateTime || '').localeCompare(b.createdDateTime || ''));
+        for (const t of todo) {
+          if (existing.has((t.title || '').trim().toLowerCase())) continue;
+          rows.push(...rowsFromTask(t, l, (pos += 0.01), s.includeDone));
+        }
+        for (let i = 0; i < rows.length; i += 200) await ins('items', rows.slice(i, i + 200));
+        tasks += rows.filter((r) => !r.parent_id).length; lists++;
+      }
+      S.sheets = []; renderSheets(true);
+      toast(`Imported ${tasks} task${tasks === 1 ? '' : 's'} from ${lists} list${lists === 1 ? '' : 's'}`);
+      go('#/');
+    } catch (e) { s.busy = false; renderSheets(true); toast(e.message); }
+  },
   setMode: (el) => { setPref('mode', el.dataset.v); applyAppearance(); render(); },
   setTheme: (el) => { setPref('theme', el.dataset.v); applyAppearance(); render(); },
   bgRemove: () => { setPref('bg', null); applyAppearance(); render(); toast('Background removed'); },
@@ -1455,10 +1631,18 @@ const CHANGE = {
   giftLink: (el) => { const it = getItem(el.dataset.id); let v = el.value.trim(); if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v; upd('items', { id: it.id }, { data: { ...it.data, link: v || null } }); renderSheets(true); },
   packBag: (el) => { const it = getItem(el.dataset.id); const b = el.value; upd('items', { id: it.id }, { data: { ...it.data, bag: b }, assignees: b === 'shared' ? it.assignees : [b] }); renderSheets(true); },
   bgFile: (el) => { const f = el.files && el.files[0]; if (f) setBackground(f); el.value = ''; },
+  todoTarget: (el) => { topSheet().lists[+el.dataset.i].target = el.value; renderSheets(true); },
+  todoType: (el) => { topSheet().lists[+el.dataset.i].type = el.value; },
   renameList: (el) => { const v = el.value.trim(); if (v) upd('lists', { id: el.dataset.id }, { title: v }); },
 };
 const INPUT = {
   nlTitle: (el) => { const d = topSheet().draft; d.title = el.value; d.touched = true; const b = $('[data-a="createList"]'); if (b) { b.disabled = !d.title.trim(); b.style.opacity = d.title.trim() ? 1 : 0.4; } },
+  importText: (el) => {
+    topSheet().text = el.value;
+    const n = parsePasted(el.value).length, c = document.getElementById('imp-count');
+    if (c) c.textContent = n ? `${n} item${n === 1 ? '' : 's'} ready to add` : 'Long-press a message in WhatsApp → Copy, then paste it here.';
+  },
+  importField: (el) => { topSheet()[el.dataset.f] = el.value; },
   bgDim: (el) => { setPref('dim', el.value); const bg = document.getElementById('bg'); if (bg) bg.style.setProperty('--dim', String(el.value / 100)); },
   mealField: (el) => { topSheet().draft[el.dataset.f] = el.value; },
   noticeField: (el) => { const d = topSheet().draft; d[el.dataset.f] = el.value; const b = $('[data-a="saveNotice"]'); if (b) { b.disabled = !d.text.trim(); b.style.opacity = d.text.trim() ? 1 : 0.4; } },
