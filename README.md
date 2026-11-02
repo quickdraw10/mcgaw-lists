@@ -14,7 +14,7 @@ Same building blocks as Vouch: **GitHub Pages** hosts the app, **Supabase** stor
 | **To do** | Overdue / Today / Coming up / Any time. Due dates, “Important” flag, sub-tasks, assign to 1, 2 or everyone. “Just mine” filter. |
 | **Work** | To do → Doing → Done tabs, priority first. Sub-tasks and due dates. |
 | **Christmas** | Gifts grouped by who they're for, with price, link and Idea → Bought → Wrapped. Total planned and spent. **Keep secret from** hides a gift from someone even on a shared list (done automatically when you add a gift for someone on the list). |
-| **Holiday packing** | A bag per person plus a Shared bag, progress bars, one-tap “essentials” starter list, “Unpack everything” to reuse next trip. |
+| **Travel packing** | A bag per person plus a Shared bag, progress bars, one-tap “essentials” starter list, “Unpack everything” to reuse next trip. |
 | **Meal planner** | Dinner each night by default (breakfast and lunch can be shown with one tap at the bottom, or in list options), who's cooking, and tap each face for **home → out → late → not sure** with a head-count. Ingredients go straight to a shopping list. |
 | **Notice board** | Coloured notes, pin to top, “show until” date, and “seen by” ticks. |
 
@@ -87,3 +87,14 @@ If the webhook shows a 401 error: open the function's settings, turn off **Enfor
 - `supabase/schema.sql` — database, sharing rules, notification triggers
 - `supabase/functions/send-push/index.ts` — sends iPhone notifications
 - `push-keys.txt` — private notification keys (**don't upload**)
+
+
+## November 2026 update
+Run `supabase/update-nov-2026.sql` once in Supabase → SQL Editor, then redeploy the `todo` Edge Function with the new code.
+
+- **Christmas privacy:** bought / wrapped, who's buying and private notes live in a separate table the gift's recipient can't read. Their own wishes stay visible to them.
+- **Priorities:** Standard, Urgent, Important, Urgent & important (shown in that order of importance, top to bottom: U&I, Urgent, Important, then everything else).
+- **Travel packing:** item counts (“underwear x8”), departure countdowns (as many as you like).
+- **Press and hold** any item to move it.
+- **Countdowns:** stand-alone or linked to any list; days, hours, minutes and months.
+- **Budget:** Mike & Louise only (enforced by the database). Accounts, money in/out, savings, transfers, untick to see the difference, savings pots, monthly log.

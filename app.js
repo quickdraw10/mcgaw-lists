@@ -8,8 +8,8 @@ const DEMO = !CFG.supabaseUrl || !CFG.supabaseAnonKey;
    Constants
    ============================================================ */
 const FAMILY = [
-  { id: 'mike',   name: 'Mike',   role_label: 'Dad', colour: '#0A84FF', sort: 1 },
-  { id: 'louise', name: 'Louise', role_label: 'Mum', colour: '#FF375F', sort: 2 },
+  { id: 'mike',   name: 'Mike',   role_label: 'Dad', colour: '#0A84FF', sort: 1, can_budget: true },
+  { id: 'louise', name: 'Louise', role_label: 'Mum', colour: '#FF375F', sort: 2, can_budget: true },
   { id: 'esme',   name: 'Esme',   role_label: null,  colour: '#BF5AF2', sort: 3 },
   { id: 'oscar',  name: 'Oscar',  role_label: null,  colour: '#30D158', sort: 4 },
 ];
@@ -62,7 +62,7 @@ const TYPES = {
   todo:      { name: 'To do',           icon: 'check', colour: '#0A84FF', title: 'To do',         desc: 'Due dates, sub-tasks and who’s doing what.', sub: true },
   work:      { name: 'Work',            icon: 'brief', colour: '#5E5CE6', title: 'Work',          desc: 'Prioritised tasks moving To do → Doing → Done.', sub: true },
   christmas: { name: 'Christmas',       icon: 'gift',  colour: '#E0352B', title: 'Christmas 2026', desc: 'Gift ideas by person, budget, and secrets.', sub: true },
-  packing:   { name: 'Holiday packing', icon: 'bag',   colour: '#FF9500', title: 'Holiday packing', desc: 'A bag for each of us, plus shared bits.', sub: true },
+  packing:   { name: 'Travel packing', icon: 'bag',   colour: '#FF9500', title: 'Travel packing', desc: 'A bag each, how many of each, and a countdown to departure.', sub: true },
   meals:     { name: 'Meal planner',    icon: 'meal',  colour: '#FF375F', title: 'Meal planner',  desc: 'This week’s meals and who’s home for them.', sub: false },
   notice:    { name: 'Notice board',    icon: 'pin',   colour: '#F5B800', title: 'Notice board',  desc: 'Family notes, pinned with “seen by”.', sub: false },
 };
@@ -158,6 +158,23 @@ const PACK_ESSENTIALS = ['Passport', 'Phone & charger', 'Toothbrush', 'Underwear
 const PACK_SHARED = ['Tickets / boarding passes', 'Travel insurance', 'Plug adaptors', 'Sun cream', 'First aid kit', 'Toothpaste', 'Shampoo & shower gel', 'Euros / cards', 'Car keys', 'Snacks for the journey'];
 const SLOTS = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner' };
 const GIFT_STATUS = { idea: 'Idea', bought: 'Bought', wrapped: 'Wrapped' };
+// To-do priority: stored 0–3, shown top to bottom as 3, 2, 1, 0
+const PRIORITY = [
+  { v: 0, label: 'Standard' },
+  { v: 2, label: 'Urgent', cls: 'orange' },
+  { v: 1, label: 'Important', cls: 'blue' },
+  { v: 3, label: 'Urgent & important', cls: 'red' },
+];
+const PRI_ORDER = [3, 2, 1, 0];
+const priOf = (it) => Math.max(0, Math.min(3, +it.priority || 0));
+const priPill = (it) => { const p = PRIORITY.find((x) => x.v === priOf(it)); return p && p.v ? `<span class="pill ${p.cls}">${p.label}</span>` : ''; };
+function parsePackQty(raw) {
+  let m = raw.match(/^(.+?)\s*[x×]\s*(\d+)$/i);
+  if (m) return { text: m[1].trim().charAt(0).toUpperCase() + m[1].trim().slice(1), qty: m[2] };
+  m = raw.match(/^(\d+)\s*[x×]?\s+(.+)$/i);
+  if (m) return { text: m[2].charAt(0).toUpperCase() + m[2].slice(1), qty: m[1] };
+  return { text: raw, qty: '' };
+}
 const WORK_STATUS = { todo: 'To do', doing: 'Doing', done: 'Done' };
 
 /* ============================================================
@@ -209,6 +226,8 @@ const sortItems = (a, b) => a.position - b.position;
    Stores — Supabase (real) or Demo (this phone only)
    ============================================================ */
 const TABLES = ['members', 'lists', 'list_access', 'items', 'meal_slots', 'meal_presence', 'notifications'];
+// Added in the November update — the app keeps working if they're not set up yet
+const OPTIONAL = ['gift_status', 'countdowns', 'budget_accounts', 'budget_pots', 'budget_entries'];
 
 class SupaStore {
   constructor() {
@@ -233,8 +252,13 @@ class SupaStore {
     return out;
   }
   async loadAll() {
-    const res = await Promise.all(TABLES.map((t) => this.fetchAll(t)));
-    return Object.fromEntries(TABLES.map((t, i) => [t, res[i]]));
+    const missing = [];
+    const opt = (t) => this.fetchAll(t).catch((e) => { missing.push(t); console.warn(t, e.message); return []; });
+    const res = await Promise.all([...TABLES.map((t) => this.fetchAll(t)), ...OPTIONAL.map(opt)]);
+    const all = [...TABLES, ...OPTIONAL];
+    const out = Object.fromEntries(all.map((t, i) => [t, res[i]]));
+    out.missing = missing;
+    return out;
   }
   async insert(t, rows) { const { error } = await this.sb.from(t).insert(rows); if (error) throw error; }
   async update(t, where, patch) { const { error } = await this.sb.from(t).update(patch).match(where); if (error) throw error; }
@@ -262,7 +286,7 @@ class SupaStore {
 
 class DemoStore {
   constructor() {
-    this.key = 'mcgaw-lists-demo-v2';
+    this.key = 'mcgaw-lists-demo-v3';
     try { this.db = JSON.parse(localStorage.getItem(this.key)); } catch { this.db = null; }
     if (!this.db) this.db = seedDemo();
     this.me = null;
@@ -279,10 +303,19 @@ class DemoStore {
     const me = this.me, db = this.db;
     const lists = db.lists.filter((l) => this.canSee(l.id));
     const ids = new Set(lists.map((l) => l.id));
+    const items = db.items.filter((i) => ids.has(i.list_id) && !(i.hidden_from || []).includes(me));
+    const giftOk = new Set(items.filter((i) => i.data?.for !== me).map((i) => i.id));
+    const budget = !!db.members.find((m) => m.id === me)?.can_budget;
     return JSON.parse(JSON.stringify({
       members: db.members, lists,
       list_access: db.list_access.filter((a) => ids.has(a.list_id)),
-      items: db.items.filter((i) => ids.has(i.list_id) && !(i.hidden_from || []).includes(me)),
+      items,
+      gift_status: (db.gift_status || []).filter((g) => giftOk.has(g.item_id)),
+      countdowns: (db.countdowns || []).filter((c) => c.owner === me || (c.members || []).includes(me) || (c.list_id && ids.has(c.list_id))),
+      budget_accounts: budget ? db.budget_accounts || [] : [],
+      budget_pots: budget ? db.budget_pots || [] : [],
+      budget_entries: budget ? db.budget_entries || [] : [],
+      missing: [],
       meal_slots: db.meal_slots.filter((m) => ids.has(m.list_id)),
       meal_presence: db.meal_presence.filter((m) => ids.has(m.list_id)),
       notifications: db.notifications.filter((n) => n.member === me).sort((a, b) => b.created_at.localeCompare(a.created_at)),
@@ -307,6 +340,7 @@ class DemoStore {
     }
   }
   async insert(t, rows) {
+    if (!this.db[t]) this.db[t] = [];
     for (const r of [].concat(rows)) { this.db[t].push({ ...r }); this.after(t, 'insert', r, null); }
     this.persist();
   }
@@ -319,13 +353,15 @@ class DemoStore {
     this.db[t] = this.db[t].filter((r) => !this.match(r, where));
     for (const r of gone) {
       if (t === 'lists') for (const tt of ['list_access', 'items', 'meal_slots', 'meal_presence', 'notifications']) this.db[tt] = this.db[tt].filter((x) => x.list_id !== r.id);
-      if (t === 'items') this.db.items = this.db.items.filter((x) => x.parent_id !== r.id);
+      if (t === 'items') { this.db.items = this.db.items.filter((x) => x.parent_id !== r.id); this.db.gift_status = (this.db.gift_status || []).filter((g) => g.item_id !== r.id); }
+      if (t === 'budget_accounts') this.db.budget_entries = this.db.budget_entries.filter((e) => e.account_id !== r.id);
     }
     this.persist();
   }
   async upsert(t, row, onConflict) {
     const keys = onConflict.split(',');
-    const hit = this.db[t].find((r) => keys.every((k) => r[k] === row[k]));
+    const hit = (this.db[t] || []).find((r) => keys.every((k) => r[k] === row[k]));
+    if (!this.db[t]) this.db[t] = [];
     if (hit) Object.assign(hit, row); else this.db[t].push({ ...row });
     this.persist();
   }
@@ -352,9 +388,11 @@ function seedDemo() {
   share('l-notice', ['mike', 'esme', 'oscar']); share('l-meals', ['mike', 'esme', 'oscar']);
   share('l-shop', ['mike'], 'admin'); share('l-shop', ['esme', 'oscar']);
   share('l-todo', ['louise'], 'admin'); share('l-todo', ['esme', 'oscar']);
-  share('l-xmas', ['louise'], 'admin');
+  share('l-xmas', ['louise'], 'admin'); share('l-xmas', ['oscar']);
   share('l-pack', ['mike', 'esme', 'oscar']);
   const fix = I('l-todo', 'Sort out the garage', { assignees: ['mike', 'oscar'], due: d(1), priority: 1 });
+  const lego = I('l-xmas', 'Lego Technic set', { data: { for: 'oscar', price: 89.99 }, created_by: 'oscar' });
+  const art = I('l-xmas', 'Art set & sketchbook', { data: { for: 'esme', price: 35 }, hidden_from: ['esme'] });
   const items = [
     I('l-shop', 'Semi-skimmed milk', { quantity: '2', category: 'Dairy & eggs' }),
     I('l-shop', 'Bananas', { category: 'Fruit & veg' }),
@@ -367,23 +405,24 @@ function seedDemo() {
     I('l-todo', 'Clear the shelves', { parent_id: fix.id, assignees: ['oscar'], done: true }),
     I('l-todo', 'Take old paint to the tip', { parent_id: fix.id, assignees: ['mike'] }),
     I('l-todo', 'Put bikes on the wall hooks', { parent_id: fix.id, assignees: ['mike', 'oscar'] }),
-    I('l-todo', 'Book dentist for the kids', { assignees: ['louise'], due: d(-1), created_by: 'louise' }),
-    I('l-todo', 'Renew car insurance', { assignees: ['mike'], due: d(9) }),
+    I('l-todo', 'Book dentist for the kids', { assignees: ['louise'], due: d(-1), created_by: 'louise', priority: 3 }),
+    I('l-todo', 'Renew car insurance', { assignees: ['mike'], due: d(9), priority: 2 }),
     I('l-todo', 'Tidy bedroom', { assignees: ['esme'], due: t, created_by: 'louise' }),
     I('l-todo', 'Fix the gate latch', {}),
     I('l-work', 'Kit list for Saturday OB', { status: 'doing', priority: 1, due: d(2), assignees: ['mike'] }),
     I('l-work', 'Crew hotel bookings', { status: 'todo', due: d(4), assignees: ['mike'] }),
     I('l-work', 'Expenses for October', { status: 'todo', due: d(1), assignees: ['mike'] }),
     I('l-work', 'Send rate card', { status: 'done', done: true, assignees: ['mike'] }),
-    I('l-xmas', 'Lego Technic set', { data: { for: 'oscar', price: 89.99, status: 'bought' }, hidden_from: ['oscar'], done: false }),
-    I('l-xmas', 'Football boots', { data: { for: 'oscar', price: 55, status: 'idea' }, hidden_from: ['oscar'] }),
-    I('l-xmas', 'Art set & sketchbook', { data: { for: 'esme', price: 35, status: 'wrapped' }, hidden_from: ['esme'], done: true }),
-    I('l-xmas', 'Concert tickets', { data: { for: 'esme', price: 120, status: 'idea' }, hidden_from: ['esme'] }),
-    I('l-xmas', 'Spa day', { data: { for: 'louise', price: 150, status: 'idea' }, hidden_from: ['louise'], created_by: 'mike' }),
-    I('l-xmas', 'Biscuit tin & card', { data: { for: 'Grandma', price: 20, status: 'idea' } }),
+    lego,
+    I('l-xmas', 'Football boots', { data: { for: 'oscar', price: 55 }, hidden_from: ['oscar'] }),
+    art,
+    I('l-xmas', 'Concert tickets', { data: { for: 'esme', price: 120 }, hidden_from: ['esme'] }),
+    I('l-xmas', 'Spa day', { data: { for: 'louise', price: 150 }, hidden_from: ['louise'], created_by: 'mike' }),
+    I('l-xmas', 'Biscuit tin & card', { data: { for: 'Grandma', price: 20 } }),
     I('l-pack', 'Passport', { data: { bag: 'esme' }, done: true }),
     I('l-pack', 'Phone & charger', { data: { bag: 'esme' } }),
     I('l-pack', 'Swimwear', { data: { bag: 'esme' } }),
+    I('l-pack', 'Underwear', { data: { bag: 'esme' }, quantity: '8' }),
     I('l-pack', 'Passport', { data: { bag: 'oscar' } }),
     I('l-pack', 'Football kit', { data: { bag: 'oscar' } }),
     I('l-pack', 'Passport', { data: { bag: 'mike' }, done: true }),
@@ -410,7 +449,14 @@ function seedDemo() {
     { id: 2, member: 'esme', actor: 'louise', kind: 'added', list_id: 'l-pack', body: 'Louise added you to “February half-term”', read: false, created_at: new Date(Date.now() - 72e5).toISOString() },
     { id: 3, member: 'oscar', actor: 'mike', kind: 'assigned', list_id: 'l-todo', body: 'Mike assigned you “Sort out the garage” in House jobs', read: false, created_at: new Date(Date.now() - 5e6).toISOString() },
   ];
-  return { members: FAMILY, lists, list_access: access, items, meal_slots, meal_presence, notifications };
+  const gift_status = [{ item_id: lego.id, status: 'bought', buyer: 'mike' }, { item_id: art.id, status: 'wrapped', buyer: 'louise' }];
+  const at = (days, h = 0) => { const x = new Date(); x.setDate(x.getDate() + days); x.setHours(h, 0, 0, 0); return x.toISOString(); };
+  const countdowns = [
+    { id: uid(), title: 'Departure', target: at(103, 6), colour: '#FF9500', kind: 'departure', list_id: 'l-pack', owner: 'louise', members: [] },
+    { id: uid(), title: 'Christmas Day', target: new Date(new Date().getFullYear(), 11, 25).toISOString(), colour: '#E0352B', kind: 'general', list_id: 'l-xmas', owner: 'mike', members: [] },
+    { id: uid(), title: 'Oscar’s birthday', target: at(41), colour: '#30B05A', kind: 'general', list_id: null, owner: 'mike', members: ['louise', 'esme', 'oscar'] },
+  ];
+  return { members: FAMILY, lists, list_access: access, items, meal_slots, meal_presence, notifications, gift_status, countdowns, ...seedBudget() };
 }
 
 /* ============================================================
@@ -419,7 +465,7 @@ function seedDemo() {
 const store = DEMO ? new DemoStore() : new SupaStore();
 const S = {
   me: null, ready: false,
-  data: { members: FAMILY, lists: [], list_access: [], items: [], meal_slots: [], meal_presence: [], notifications: [] },
+  data: { members: FAMILY, lists: [], list_access: [], items: [], meal_slots: [], meal_presence: [], notifications: [], gift_status: [], countdowns: [], budget_accounts: [], budget_pots: [], budget_entries: [], missing: [] },
   sheets: [], filter: 'all', ui: {},
 };
 const ui = (k, def) => (k in S.ui ? S.ui[k] : def);
@@ -437,6 +483,11 @@ const itemsOf = (listId) => S.data.items.filter((i) => i.list_id === listId && !
 const childrenOf = (id) => S.data.items.filter((i) => i.parent_id === id).sort(sortItems);
 const unreadCount = () => S.data.notifications.filter((n) => !n.read).length;
 const listColour = (l) => l.colour || TYPES[l.type].colour;
+const giftOf = (id) => (S.data.gift_status || []).find((g) => g.item_id === id) || null;
+const giftState = (id) => giftOf(id)?.status || 'idea';
+const isMyWish = (it) => it.data?.for === S.me;
+const canBudget = () => !!member(S.me)?.can_budget;
+const missing = (t) => (S.data.missing || []).includes(t);
 
 function avatar(id, size = 28) {
   const m = member(id) || { name: '?', colour: '#8E8E93' };
@@ -505,7 +556,7 @@ function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const [name, id] = h.split('/');
   if (name === 'list' && id) return { name: 'list', id };
-  if (['mine', 'activity', 'family'].includes(name)) return { name };
+  if (['mine', 'activity', 'family', 'countdowns', 'budget'].includes(name)) return { name };
   return { name: 'home' };
 }
 const go = (hash) => { location.hash = hash; };
@@ -513,6 +564,7 @@ const go = (hash) => { location.hash = hash; };
 function render() {
   const app = $('#view');
   if (!S.me) { renderSheets(); return; }
+  if (DRAG.active) { DRAG.pending = true; return; }
   const r = route();
   // keep focus & typing across re-renders
   const ae = document.activeElement;
@@ -523,9 +575,11 @@ function render() {
   else if (r.name === 'mine') html = mineView();
   else if (r.name === 'activity') html = activityView();
   else if (r.name === 'family') html = familyView();
+  else if (r.name === 'countdowns') html = countdownsView();
+  else if (r.name === 'budget') html = budgetView();
   else html = homeView();
   app.innerHTML = html;
-  app.classList.toggle('no-tabs', r.name === 'list');
+  app.classList.toggle('no-tabs', ['list', 'countdowns', 'budget'].includes(r.name));
   if (keep) { const el = document.getElementById(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.s, keep.s); } catch { /* */ } } }
   inkPass(app);
   renderTabs(r);
@@ -534,7 +588,7 @@ function render() {
 
 function renderTabs(r) {
   const tb = $('#tabbar');
-  if (!S.me || r.name === 'list') { tb.className = 'hide'; tb.innerHTML = ''; return; }
+  if (!S.me || ['list', 'countdowns', 'budget'].includes(r.name)) { tb.className = 'hide'; tb.innerHTML = ''; return; }
   tb.className = '';
   const mine = myOpenTasks().length;
   const u = unreadCount();
@@ -620,6 +674,8 @@ function homeView() {
     <button class="tile" ${shopping[0] ? `data-a="go" data-h="#/list/${shopping[0].id}"` : 'data-a="newList" data-type="shopping"'}><div class="top"><span class="tile-icon sm" style="--c:${TYPES.shopping.colour}">${icon('cart', 18)}</span><span class="num">${toGet}</span></div><div class="lbl">To buy</div></button>
     <button class="tile" data-a="noticeTile"><div class="top"><span class="tile-icon sm" style="--c:${TYPES.notice.colour}">${icon('pin', 18)}</span><span class="num">${unseen}</span></div><div class="lbl">New notices</div></button>
   </div>
+  ${canBudget() ? budgetTile() : ''}
+  ${homeCountdowns()}
   <div class="chips" style="margin-top:14px">${chip('all', 'All')}${chip('shared', 'Shared')}${chip('mine', 'Just me')}${usedTypes.map((t) => chip(t, TYPES[t].name, TYPES[t].colour)).join('')}</div>
   ${body}`;
 }
@@ -644,7 +700,7 @@ function mineView() {
   let body = '';
   for (const [label, rows] of buckets) {
     if (!rows.length) continue;
-    rows.sort((a, b) => (a.due || '').localeCompare(b.due || '') || b.priority - a.priority);
+    rows.sort((a, b) => priOf(b) - priOf(a) || (a.due || '').localeCompare(b.due || ''));
     body += `<div class="section-label">${label}</div><div class="group">${rows.map((i) => itemRow(i, getList(i.list_id), { context: true })).join('')}</div>`;
   }
   if (!body) body = `<div class="empty"><div class="big">All clear 🎉</div>Anything assigned to you across the family’s lists will show up here.</div>`;
@@ -719,7 +775,7 @@ function listView(id) {
         <button class="icon-btn" data-a="listMenu" data-id="${l.id}" aria-label="List options">${icon('more', 20, 2.6)}</button>
       </div></div>
     <div class="eyebrow" style="color:${isLight(listColour(l)) ? `color-mix(in srgb, ${listColour(l)} 55%, var(--label))` : listColour(l)}">${TYPES[l.type].name}${isOwner(l) ? '' : ' · ' + esc(memberName(l.owner)) + '’s list'}</div>
-    <h1 class="large">${esc(l.title)}</h1>`;
+    <h1 class="large">${esc(l.title)}</h1>${l.type === 'packing' ? '' : listCountdowns(l)}`;
   const body = { shopping: shoppingView, todo: todoView, work: workView, christmas: christmasView, packing: packingView, meals: mealsView, notice: noticeView }[l.type](l);
   return `<div style="--c:${listColour(l)}">${head}${body}</div>`;
 }
@@ -728,25 +784,36 @@ function itemRow(it, l, opts = {}) {
   const subs = childrenOf(it.id);
   const meta = [];
   if (opts.context) meta.push(`<span>${esc(l.title)}${it.parent_id ? ' · ' + esc(getItem(it.parent_id)?.text || '') : ''}</span>`);
-  if (it.priority) meta.push(`<span class="flag">${icon('flag', 13, 2.4)}</span>`);
+  if (['todo', 'work'].includes(l.type)) { const pp = priPill(it); if (pp) meta.push(pp); }
   if (it.due) meta.push(`<span class="pill ${!it.done && it.due < today() ? 'red' : it.due === today() ? 'orange' : ''}">${fmtDue(it.due)}</span>`);
-  if (it.quantity) meta.push(`<span class="pill">${esc(it.quantity)}</span>`);
+  if (it.quantity) meta.push(`<span class="pill">${l.type === 'packing' && /^\d+$/.test(it.quantity) ? '×' + esc(it.quantity) : esc(it.quantity)}</span>`);
   if (l.type === 'work' && it.status && !opts.context) meta.push(`<span class="pill ${it.status === 'doing' ? 'blue' : it.status === 'done' ? 'green' : ''}">${WORK_STATUS[it.status]}</span>`);
-  if (l.type === 'christmas') {
-    const st = it.data?.status || 'idea';
-    meta.push(`<span class="pill ${st === 'bought' ? 'blue' : st === 'wrapped' ? 'green' : ''}">${GIFT_STATUS[st]}</span>`);
+  let gift = null;
+  if (l.type === 'christmas' && !it.parent_id) {
+    if (isMyWish(it)) meta.push('<span class="pill">On your list</span>');
+    else {
+      gift = giftOf(it.id);
+      const st = gift?.status || 'idea';
+      meta.push(`<span class="pill ${st === 'bought' ? 'blue' : st === 'wrapped' ? 'green' : ''}">${GIFT_STATUS[st]}</span>`);
+      if (gift?.buyer) meta.push(`<span>${esc(memberName(gift.buyer))} buying</span>`);
+    }
     if (it.data?.price) meta.push(`<span class="price">${money(+it.data.price)}</span>`);
     if ((it.hidden_from || []).length) meta.push(`<span>🤫 hidden from ${it.hidden_from.map(memberName).join(', ')}</span>`);
   }
   if (subs.length) meta.push(`<span>${subs.filter((s) => s.done).length}/${subs.length} sub-tasks</span>`);
   if (it.notes && l.type !== 'notice') meta.push('<span>📝</span>');
   if (l.type === 'shopping' && it.created_by && it.created_by !== S.me && !it.assignees.length) meta.push(`<span>added by ${esc(memberName(it.created_by))}</span>`);
-  const half = l.type === 'christmas' && it.data?.status === 'bought';
+  const xmas = l.type === 'christmas' && !it.parent_id;
+  const half = xmas && gift?.status === 'bought';
+  const on = xmas ? gift?.status === 'wrapped' : it.done;
   const c = listColour(l);
-  return `<div class="row item ${it.done ? 'done' : ''}" style="--indent:50px">
-    <button class="check ${it.done ? 'on' : half ? 'half' : ''}" style="--c:${c}" data-a="toggle" data-id="${it.id}" aria-label="Tick"></button>
+  const box = xmas && isMyWish(it)
+    ? `<span class="wish" style="--c:${c}" aria-hidden="true">${icon('gift', 16, 2)}</span>`
+    : `<button class="check ${on ? 'on' : half ? 'half' : ''}" style="--c:${c}" data-a="toggle" data-id="${it.id}" aria-label="Tick"></button>`;
+  return `<div class="row item ${on ? 'done' : ''}" style="--indent:50px" ${opts.context ? '' : `data-iid="${it.id}"`}>
+    ${box}
     <div class="row-main" data-a="openItem" data-id="${it.id}"><div class="row-title">${esc(it.text)}</div>${meta.length ? `<div class="row-meta">${meta.join('')}</div>` : ''}</div>
-    ${avatarStack(it.assignees, 22)}</div>`;
+    ${xmas ? '' : avatarStack(it.assignees, 22)}</div>`;
 }
 const quickAdd = (l, ph, extra = '') => `<div class="quick"><span class="plus">${icon('plus', 22, 2.4)}</span><input id="qa-${l.id}" placeholder="${ph}" enterkeyhint="done" autocomplete="off" data-enter="quickAdd" data-id="${l.id}">${extra}</div>`;
 const doneSection = (l, done, label, limit = 30) => {
@@ -767,7 +834,7 @@ function shoppingView(l) {
   let body = '';
   for (const a of AISLES) {
     const rows = open.filter((i) => (i.category || 'Other') === a);
-    if (rows.length) body += `<div class="section-label">${a}</div><div class="group">${rows.map((i) => itemRow(i, l)).join('')}</div>`;
+    if (rows.length) body += `<div class="section-label">${a}</div><div class="group" data-reorder>${rows.map((i) => itemRow(i, l)).join('')}</div>`;
   }
   if (!open.length) body = `<div class="empty"><div class="big">${done.length ? 'Everything’s in the trolley 🛒' : 'Nothing on the list'}</div>Type what you need — try “2 milk” or “500g mince”. Items are sorted into aisles automatically.</div>`;
   return quickAdd(l, 'Add an item') + body + doneSection(l, done, 'In the trolley');
@@ -778,16 +845,21 @@ function todoView(l) {
   let items = itemsOf(l.id);
   if (ui('mine-' + l.id, false)) items = items.filter((i) => i.assignees.includes(S.me) || childrenOf(i.id).some((s) => s.assignees.includes(S.me)));
   const open = items.filter((i) => !i.done), done = items.filter((i) => i.done);
-  const t = today();
-  const groups = [['Overdue', open.filter((i) => i.due && i.due < t)], ['Today', open.filter((i) => i.due === t)], ['Coming up', open.filter((i) => i.due && i.due > t)], ['Any time', open.filter((i) => !i.due)]];
-  let body = '';
-  for (const [label, rows] of groups) {
-    if (!rows.length) continue;
-    rows.sort((a, b) => (a.due || '').localeCompare(b.due || '') || b.priority - a.priority || a.position - b.position);
-    body += `<div class="section-label"><span ${label === 'Overdue' ? 'style="color:var(--red)"' : ''}>${label}</span></div><div class="group">${rows.map((i) => itemRow(i, l)).join('')}</div>`;
-  }
+  let body = priorityGroups(open, l);
   if (!open.length) body = `<div class="empty"><div class="big">Nothing to do</div>Add a task, then tap it to set a due date, assign it, or break it into sub-tasks.</div>`;
   return quickAdd(l, 'New task') + mineToggle(l) + body + doneSection(l, done, 'Completed');
+}
+
+function priorityGroups(rows, l) {
+  const used = PRI_ORDER.filter((p) => rows.some((i) => priOf(i) === p));
+  let html = '';
+  for (const p of used) {
+    const g = rows.filter((i) => priOf(i) === p).sort((a, b) => a.position - b.position);
+    const info = PRIORITY.find((x) => x.v === p);
+    const label = p ? info.label : used.length > 1 ? 'Everything else' : '';
+    html += `${label ? `<div class="section-label"><span class="pri-label ${info.cls || ''}">${label}</span><span class="muted">${g.length}</span></div>` : '<div style="height:14px"></div>'}<div class="group" data-reorder>${g.map((i) => itemRow(i, l)).join('')}</div>`;
+  }
+  return html;
 }
 
 /* ---------- Work ---------- */
@@ -796,9 +868,9 @@ function workView(l) {
   if (ui('mine-' + l.id, false)) items = items.filter((i) => i.assignees.includes(S.me));
   const st = ui('ws-' + l.id, 'todo');
   const count = (s) => items.filter((i) => (i.status || 'todo') === s).length;
-  const rows = items.filter((i) => (i.status || 'todo') === st).sort((a, b) => b.priority - a.priority || (a.due || '9').localeCompare(b.due || '9') || a.position - b.position);
+  const rows = items.filter((i) => (i.status || 'todo') === st);
   const seg = `<div class="seg" style="margin:12px 0 0">${Object.entries(WORK_STATUS).map(([k, v]) => `<button class="${st === k ? 'on' : ''}" data-a="setUi" data-k="ws-${l.id}" data-v="${k}">${v} · ${count(k)}</button>`).join('')}</div>`;
-  const list = rows.length ? `<div class="group" style="margin-top:14px">${rows.slice(0, st === 'done' ? 40 : 999).map((i) => itemRow(i, l)).join('')}</div>` : `<div class="empty">${st === 'done' ? 'Nothing finished yet.' : st === 'doing' ? 'Nothing in progress. Open a task and set it to Doing.' : 'No tasks waiting. Add one above.'}</div>`;
+  const list = rows.length ? priorityGroups(rows.slice(0, st === 'done' ? 40 : 999), l) : `<div class="empty">${st === 'done' ? 'Nothing finished yet.' : st === 'doing' ? 'Nothing in progress. Open a task and set it to Doing.' : 'No tasks waiting. Add one above.'}</div>`;
   const clear = st === 'done' && rows.length && isAdmin(l) ? `<button class="link-btn" data-a="clearDone" data-id="${l.id}">Clear finished tasks</button>` : '';
   return quickAdd(l, 'New work task') + seg + list + clear + (listMembers(l).length > 1 ? mineToggle(l) : '');
 }
@@ -810,17 +882,20 @@ function christmasView(l) {
   const items = itemsOf(l.id);
   const fors = [...new Set(items.map(giftFor))].sort((a, b) => (member(a) ? member(a).sort : 10) - (member(b) ? member(b).sort : 10) || a.localeCompare(b));
   const total = items.reduce((s, i) => s + (+i.data?.price || 0), 0);
-  const bought = items.filter((i) => ['bought', 'wrapped'].includes(i.data?.status)).reduce((s, i) => s + (+i.data?.price || 0), 0);
+  const bought = items.filter((i) => !isMyWish(i) && ['bought', 'wrapped'].includes(giftState(i.id))).reduce((s, i) => s + (+i.data?.price || 0), 0);
   const curFor = ui('for-' + l.id, null);
   const chips = `<div class="chips" style="margin:10px -16px 0">${membersSorted().map((m) => `<button class="chip ${curFor === m.id ? 'on' : ''}" data-a="setUi" data-k="for-${l.id}" data-v="${m.id}"><span class="dot" style="--c:${m.colour}"></span>For ${esc(m.name)}</button>`).join('')}<button class="chip ${curFor && !member(curFor) ? 'on' : ''}" data-a="forOther" data-id="${l.id}">${curFor && !member(curFor) ? 'For ' + esc(curFor) : 'Someone else…'}</button></div>`;
   let body = `<div class="tiles" style="margin-top:14px"><div class="tile"><div class="num price">${money(total)}</div><div class="lbl">Planned</div></div><div class="tile"><div class="num price">${money(bought)}</div><div class="lbl">Bought so far</div></div></div>`;
   for (const f of fors) {
     const rows = items.filter((i) => giftFor(i) === f);
     const sum = rows.reduce((s, i) => s + (+i.data?.price || 0), 0);
-    const doneN = rows.filter((i) => i.data?.status === 'wrapped').length;
-    body += `<div class="ghead">${member(f) ? avatar(f, 30) : `<span class="tile-icon sm" style="--c:#8E8E93">${icon('gift', 16)}</span>`}<span class="t">${esc(forLabel(f))}</span><span class="s">${doneN}/${rows.length} wrapped${sum ? ' · ' + money(sum) : ''}</span></div><div class="group">${rows.map((i) => itemRow(i, l)).join('')}</div>`;
+    const doneN = rows.filter((i) => giftState(i.id) === 'wrapped').length;
+    const mine = f === S.me;
+    body += `<div class="ghead">${member(f) ? avatar(f, 30) : `<span class="tile-icon sm" style="--c:#8E8E93">${icon('gift', 16)}</span>`}<span class="t">${mine ? 'Your list' : esc(forLabel(f))}</span><span class="s">${mine ? `${rows.length} idea${rows.length === 1 ? '' : 's'}` : `${doneN}/${rows.length} wrapped`}${sum ? ' · ' + money(sum) : ''}</span></div>
+      <div class="group" data-reorder>${rows.map((i) => itemRow(i, l)).join('')}</div>
+      ${mine ? '<p class="hint">You won’t see when any of these are bought 🤫</p>' : ''}`;
   }
-  if (!items.length) body += '<div class="empty"><div class="big">No gift ideas yet</div>Pick who it’s for, then add ideas. Tap the circle to move a gift from Idea → Bought → Wrapped. Open a gift to keep it secret from someone.</div>';
+  if (!items.length) body += '<div class="empty"><div class="big">No gift ideas yet</div>Pick who it’s for, then add ideas. Tap the circle to move a gift from Idea → Bought → Wrapped. The person a gift is for never sees that it’s been bought.</div>';
   return quickAdd(l, curFor ? `Gift idea for ${forLabel(curFor)}` : 'Gift idea (pick who it’s for below)') + chips + body;
 }
 
@@ -838,10 +913,10 @@ function packingView(l) {
     if (!rows.length) continue;
     const p = rows.filter((i) => i.done).length;
     rows.sort((a, z) => a.done - z.done || a.position - z.position);
-    body += `<div class="ghead">${b === 'shared' ? `<span class="tile-icon sm" style="--c:${listColour(l)}">${icon('bag', 16)}</span>` : avatar(b, 30)}<span class="t">${b === 'shared' ? 'Shared' : esc(member(b).name)}</span><span class="s">${p}/${rows.length}</span><div class="bar" style="--c:${b === 'shared' ? listColour(l) : member(b).colour}"><i style="width:${(p / rows.length) * 100}%"></i></div></div><div class="group">${rows.map((i) => itemRow(i, l)).join('')}</div>`;
+    body += `<div class="ghead">${b === 'shared' ? `<span class="tile-icon sm" style="--c:${listColour(l)}">${icon('bag', 16)}</span>` : avatar(b, 30)}<span class="t">${b === 'shared' ? 'Shared' : esc(member(b).name)}</span><span class="s">${p}/${rows.length}</span><div class="bar" style="--c:${b === 'shared' ? listColour(l) : member(b).colour}"><i style="width:${(p / rows.length) * 100}%"></i></div></div><div class="group" data-reorder>${rows.map((i) => itemRow(i, l)).join('')}</div>`;
   }
   if (!all) body += '<div class="empty"><div class="big">Nothing packed yet</div>Choose whose bag above, then add things — or start from the essentials list.</div>';
-  return quickAdd(l, cur === 'shared' ? 'Add to the shared bag' : `Add to ${member(cur)?.name || 'your'}’s bag`) + chips +
+  return departureCards(l) + quickAdd(l, cur === 'shared' ? 'Add to the shared bag — try “8 socks”' : `Add to ${member(cur)?.name || 'your'}’s bag — try “underwear x8”`) + chips +
     `<button class="link-btn" data-a="essentials" data-id="${l.id}">+ Add the essentials</button>` + body;
 }
 
@@ -882,20 +957,20 @@ function expired(i) { return i.data?.until && i.data.until < today(); }
 function noticeView(l) {
   const all = itemsOf(l.id);
   const showOld = ui('old-' + l.id, false);
-  const items = all.filter((i) => showOld || !expired(i)).sort((a, b) => (b.data?.pinned ? 1 : 0) - (a.data?.pinned ? 1 : 0) || b.created_at.localeCompare(a.created_at));
+  const items = all.filter((i) => showOld || !expired(i)).sort((a, b) => (b.data?.pinned ? 1 : 0) - (a.data?.pinned ? 1 : 0) || b.position - a.position);
   const oldN = all.filter(expired).length;
   const cards = items.map((n) => {
     const seen = n.data?.seen || [];
     const c = n.data?.colour || listColour(l);
     const mine = n.created_by === S.me;
-    return `<div class="note tint" style="--c:${c}" data-a="openNotice" data-id="${n.id}">
+    return `<div class="note tint" style="--c:${c}" data-a="openNotice" data-id="${n.id}" data-iid="${n.id}">
       ${n.data?.pinned ? `<span class="pin">${icon('pin', 18, 2.2)}</span>` : ''}
       <h4>${esc(n.text)}</h4>${n.notes ? `<p>${esc(n.notes)}</p>` : ''}
       <div class="note-foot">${avatar(n.created_by, 22)}<span>${esc(memberName(n.created_by))} · ${timeAgo(n.created_at)}${n.data?.until ? ` · until ${fmtDay(parseYmd(n.data.until))}` : ''}</span>
         <span class="seen">${seen.length ? `<span class="muted">Seen</span>${avatarStack(seen, 20)}` : ''}${!mine && !seen.includes(S.me) ? `<button class="seen-btn" data-a="seen" data-id="${n.id}">Mark seen</button>` : ''}</span></div></div>`;
   }).join('');
   return `<button class="btn tinted" data-a="newNotice" data-id="${l.id}" style="--c:${listColour(l)}">${icon('plus', 20, 2.4)} New note</button>
-    <div class="notes" style="margin-top:14px">${cards || '<div class="empty"><div class="big">The board is empty</div>Post reminders, plans and house rules for everyone on this board.</div>'}</div>
+    <div class="notes" style="margin-top:14px" data-reorder data-order="desc">${cards || '<div class="empty"><div class="big">The board is empty</div>Post reminders, plans and house rules for everyone on this board.</div>'}</div>
     ${oldN ? `<button class="link-btn" data-a="toggleUi" data-k="old-${l.id}">${showOld ? 'Hide' : 'Show'} ${oldN} expired note${oldN === 1 ? '' : 's'}</button>` : ''}`;
 }
 
@@ -908,6 +983,7 @@ function renderSheets(force) {
   const host = $('#sheets');
   const ae = document.activeElement;
   if (!force && ae && host.contains(ae) && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return; // don't disturb typing
+  if (DRAG.active) { DRAG.pending = true; return; }
   const scrolls = [...host.querySelectorAll('.sheet')].map((el) => el.scrollTop);
   host.innerHTML = S.sheets.map((s, i) => {
     const html = sheetHtml(s);
@@ -937,6 +1013,10 @@ function sheetHtml(s) {
     case 'password': return passwordSheet();
     case 'import': return importSheet(s);
     case 'todo': return todoSheet(s);
+    case 'countdown': return countdownSheet(s);
+    case 'bEntry': return budgetEntrySheet(s);
+    case 'bPot': return budgetPotSheet(s);
+    case 'bAccounts': return budgetAccountsSheet(s);
   }
   return '';
 }
@@ -991,8 +1071,10 @@ function listMenuSheet(s) {
   } else {
     html += `<p class="hint" style="margin-top:12px">${esc(memberName(l.owner))} owns this list. Ask them for admin rights to rename it or change settings.</p>`;
   }
+  if (!['meals'].includes(l.type)) html += '<p class="hint" style="margin-top:14px">Tip: press and hold any item to pick it up and move it.</p>';
   html += '<div class="stack-gap" style="margin-top:22px">';
   html += `<button class="btn secondary" data-a="share" data-id="${l.id}">${icon('people', 20)} Sharing</button>`;
+  if (!missing('countdowns')) html += `<button class="btn secondary" data-a="newCd" data-list="${l.id}" data-kind="${l.type === 'packing' ? 'departure' : 'general'}">${icon('cal', 20)} Add a countdown</button>`;
   if (!['meals', 'notice'].includes(l.type)) html += `<button class="btn secondary" data-a="openImport" data-tab="paste" data-id="${l.id}">${icon('list', 20)} Paste in items</button>`;
   if (admin && l.type === 'packing') html += `<button class="btn secondary" data-a="unpack" data-id="${l.id}">Unpack everything (reuse list)</button>`;
   if (admin && ['shopping', 'todo', 'work'].includes(l.type)) html += `<button class="btn secondary" data-a="clearDone" data-id="${l.id}">Clear completed items</button>`;
@@ -1016,7 +1098,7 @@ function itemSheet(s) {
   if (parent) html += `<button class="link-btn" data-a="openItem" data-id="${parent.id}" style="padding-top:0">↑ ${esc(parent.text)}</button>`;
   html += `<textarea class="big-input" id="it-text" rows="1" data-change="itemText" data-id="${it.id}">${esc(it.text)}</textarea>`;
 
-  if (people.length > 1 || T !== 'shopping') {
+  if ((people.length > 1 || T !== 'shopping') && !(T === 'christmas' && !parent)) {
     html += `<div class="section-label"><span>${T === 'packing' ? 'Who’s packing it' : 'Assigned to'}</span>${people.length > 2 ? `<button data-a="assignAll" data-id="${it.id}">${allOn ? 'Clear' : 'Everyone'}</button>` : ''}</div>
       <div class="group" style="padding:12px 10px"><div class="who">${people.map((m) => `<button class="${it.assignees.includes(m.id) ? 'on' : ''}" data-a="assign" data-id="${it.id}" data-m="${m.id}">${avatar(m.id, 46)}${esc(m.name)}</button>`).join('')}</div></div>`;
   }
@@ -1024,7 +1106,7 @@ function itemSheet(s) {
   const f = [];
   if (['todo', 'work'].includes(T)) {
     f.push(`<div class="field"><label>Due</label><input type="date" value="${it.due || ''}" data-change="itemField" data-f="due" data-id="${it.id}"></div>`);
-    f.push(`<div class="field tap" data-a="priority" data-id="${it.id}"><label>Important</label><span style="flex:1"></span><span class="switch ${it.priority ? 'on' : ''}"></span></div>`);
+    f.push(`<div class="field col"><label>Priority</label><div class="pri-grid">${PRIORITY.map((p) => `<button class="pri ${p.cls || ''} ${priOf(it) === p.v ? 'on' : ''}" data-a="setPriority" data-id="${it.id}" data-v="${p.v}">${p.label}</button>`).join('')}</div></div>`);
   }
   if (T === 'work' && !parent) {
     f.push(`<div class="field"><label>Status</label><div class="seg" style="flex:1">${Object.entries(WORK_STATUS).map(([k, v]) => `<button class="${(it.status || 'todo') === k ? 'on' : ''}" data-a="workStatus" data-id="${it.id}" data-v="${k}">${v}</button>`).join('')}</div></div>`);
@@ -1035,35 +1117,47 @@ function itemSheet(s) {
   }
   if (T === 'christmas' && !parent) {
     const fr = it.data?.for || '';
-    f.push(`<div class="field"><label>For</label><select data-change="giftFor" data-id="${it.id}"><option value="">Not decided</option>${membersSorted().map((m) => `<option value="${m.id}" ${fr === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}${fr && !member(fr) ? `<option selected>${esc(fr)}</option>` : ''}<option value="__other">Someone else…</option></select></div>`);
+    f.push(`<div class="field"><label>For</label><select data-change="giftFor" data-id="${it.id}" ${isMyWish(it) ? 'disabled' : ''}><option value="">Not decided</option>${membersSorted().map((m) => `<option value="${m.id}" ${fr === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}${fr && !member(fr) ? `<option selected>${esc(fr)}</option>` : ''}<option value="__other">Someone else…</option></select></div>`);
     f.push(`<div class="field"><label>Price (£)</label><input inputmode="decimal" value="${it.data?.price ?? ''}" placeholder="0.00" data-change="giftPrice" data-id="${it.id}"></div>`);
     f.push(`<div class="field"><label>Link</label><input type="url" value="${esc(it.data?.link || '')}" placeholder="Paste a shop link" data-change="giftLink" data-id="${it.id}"></div>`);
     if (it.data?.link) f.push(`<div class="field"><label></label><a href="${esc(it.data.link)}" target="_blank" rel="noopener" style="color:var(--accent);flex:1;text-align:right">Open link ↗</a></div>`);
-    f.push(`<div class="field"><label>Status</label><div class="seg" style="flex:1">${Object.entries(GIFT_STATUS).map(([k, v]) => `<button class="${(it.data?.status || 'idea') === k ? 'on' : ''}" data-a="giftStatus" data-id="${it.id}" data-v="${k}">${v}</button>`).join('')}</div></div>`);
   }
+  if (T === 'packing') f.push(`<div class="field"><label>How many</label><input inputmode="numeric" value="${esc(it.quantity || '')}" placeholder="e.g. 8" data-change="itemField" data-f="quantity" data-id="${it.id}"></div>`);
   if (T === 'packing' && !parent) {
     const bag = it.data?.bag || 'shared';
     f.push(`<div class="field"><label>Bag</label><select data-change="packBag" data-id="${it.id}">${people.map((m) => `<option value="${m.id}" ${bag === m.id ? 'selected' : ''}>${esc(m.name)}’s bag</option>`).join('')}<option value="shared" ${bag === 'shared' ? 'selected' : ''}>Shared</option></select></div>`);
   }
   if (f.length) html += `<div class="group" style="margin-top:18px">${f.join('')}</div>`;
 
-  if (T === 'christmas' && !parent) {
+  if (T === 'christmas' && !parent && isMyWish(it)) {
+    html += `<p class="hint" style="margin-top:12px">🎁 This is on your list. You won’t see if it’s been bought or wrapped — that stays a surprise.</p>`;
+  }
+  if (T === 'christmas' && !parent && !isMyWish(it)) {
+    const g = giftOf(it.id) || {};
+    const forM = member(it.data?.for);
+    html += `<div class="section-label">Private${forM ? ` — hidden from ${esc(forM.name)}` : ''}</div>
+      <div class="group">
+        <div class="field"><label>Status</label><div class="seg" style="flex:1">${Object.entries(GIFT_STATUS).map(([k, v]) => `<button class="${(g.status || 'idea') === k ? 'on' : ''}" data-a="giftStatus" data-id="${it.id}" data-v="${k}">${v}</button>`).join('')}</div></div>
+        <div class="field col"><label>Who’s buying it</label><div class="who">${people.filter((m) => m.id !== it.data?.for).map((m) => `<button class="${g.buyer === m.id ? 'on' : ''}" data-a="giftBuyer" data-id="${it.id}" data-m="${m.id}">${avatar(m.id, 40)}${esc(m.name)}</button>`).join('')}</div></div>
+        <textarea class="textarea" style="min-height:64px;border-top:.5px solid var(--sep)" placeholder="Private note — where it’s from, where it’s hidden…" data-change="giftNote" data-id="${it.id}">${esc(g.note || '')}</textarea>
+      </div>
+      ${forM ? `<p class="hint">${esc(forM.name)} can${(it.hidden_from || []).includes(forM.id) ? '’t see this gift at all' : ' see this idea, but never its status, buyer or private note'}.</p>` : ''}`;
     const others = people.filter((m) => m.id !== S.me);
     if (others.length) {
       html += `<div class="section-label">🤫 Keep secret from</div><div class="group" style="padding:12px 10px"><div class="who">${others.map((m) => `<button class="${(it.hidden_from || []).includes(m.id) ? 'on' : ''}" data-a="secret" data-id="${it.id}" data-m="${m.id}">${avatar(m.id, 46)}${esc(m.name)}</button>`).join('')}</div></div>
-      <p class="hint">They won’t see this gift at all, even though they can see the list.</p>`;
+      <p class="hint">Anyone ticked here won’t see this gift at all.</p>`;
     }
   }
 
   if (TYPES[T].sub && !parent) {
     const subs = childrenOf(it.id);
-    html += `<div class="section-label">Sub-tasks${subs.length ? ` · ${subs.filter((x) => x.done).length}/${subs.length}` : ''}</div><div class="group">
-      ${subs.map((x) => `<div class="row item ${x.done ? 'done' : ''}" style="--indent:48px"><button class="check sm ${x.done ? 'on' : ''}" style="--c:${listColour(l)}" data-a="toggle" data-id="${x.id}"></button><div class="row-main" data-a="openItem" data-id="${x.id}"><div class="row-title" style="font-size:16px">${esc(x.text)}</div>${x.due ? `<div class="row-meta"><span class="pill ${!x.done && x.due < today() ? 'red' : ''}">${fmtDue(x.due)}</span></div>` : ''}</div>${avatarStack(x.assignees, 22)}</div>`).join('')}
+    html += `<div class="section-label">Sub-tasks${subs.length ? ` · ${subs.filter((x) => x.done).length}/${subs.length}` : ''}</div><div class="group" data-reorder>
+      ${subs.map((x) => `<div class="row item ${x.done ? 'done' : ''}" style="--indent:48px" data-iid="${x.id}"><button class="check sm ${x.done ? 'on' : ''}" style="--c:${listColour(l)}" data-a="toggle" data-id="${x.id}"></button><div class="row-main" data-a="openItem" data-id="${x.id}"><div class="row-title" style="font-size:16px">${esc(x.text)}</div>${x.due ? `<div class="row-meta"><span class="pill ${!x.done && x.due < today() ? 'red' : ''}">${fmtDue(x.due)}</span></div>` : ''}</div>${avatarStack(x.assignees, 22)}</div>`).join('')}
       <div class="row" style="--indent:48px"><span class="plus" style="--c:${listColour(l)};width:20px">${icon('plus', 20, 2.4)}</span><input id="sub-${it.id}" placeholder="Add a sub-task" style="flex:1;border:0;outline:0;background:transparent;padding:8px 0" enterkeyhint="done" data-enter="addSub" data-id="${it.id}" autocomplete="off"></div></div>
       ${subs.length ? '<p class="hint">Tap a sub-task to assign it or give it a date.</p>' : ''}`;
   }
 
-  html += `<div class="section-label">Notes</div><div class="group"><textarea class="textarea" placeholder="Add notes" data-change="itemField" data-f="notes" data-id="${it.id}">${esc(it.notes || '')}</textarea></div>`;
+  html += `<div class="section-label">${T === 'christmas' && !parent ? 'Notes — everyone on the list can see' : 'Notes'}</div><div class="group"><textarea class="textarea" placeholder="Add notes" data-change="itemField" data-f="notes" data-id="${it.id}">${esc(it.notes || '')}</textarea></div>`;
   html += `<p class="hint">Added by ${esc(memberName(it.created_by))} · ${timeAgo(it.created_at)}${it.done && it.done_by ? ` · ticked by ${esc(memberName(it.done_by))}` : ''}</p>`;
   return html;
 }
@@ -1215,7 +1309,7 @@ function rowsFromTask(t, l, pos, includeDone) {
   if (l.type === 'shopping') { const p = parseQty(text); text = p.text; extra.quantity = p.qty || null; extra.category = guessAisle(p.text); }
   if (l.type === 'work') extra.status = done ? 'done' : 'todo';
   if (l.type === 'packing') extra.data = { bag: 'shared' };
-  if (l.type === 'christmas') extra.data = { status: done ? 'wrapped' : 'idea' };
+  if (l.type === 'christmas') { extra.data = {}; extra.done = false; extra.done_by = null; extra.done_at = null; }
   const steps = t.checklistItems || [];
   if (steps.length && !TYPES[l.type].sub) extra.notes = [notesRaw, steps.map((c) => (c.isChecked ? '✓ ' : '• ') + c.displayName).join('\n')].filter(Boolean).join('\n\n');
   const parent = newItem(l, text, extra);
@@ -1237,13 +1331,14 @@ function todoRow() {
   const sub = a.last_error ? `<span style="color:var(--red)">${esc(a.last_error)}</span>` : a.last_sync ? `Synced ${timeAgo(a.last_sync)} · ${T.links.length} link${T.links.length === 1 ? '' : 's'}` : 'Connected';
   return `<div class="row tap" data-a="todoOpen">${tile}<div class="row-main"><div class="row-title">Microsoft To Do</div><div class="row-sub">${sub}</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`;
 }
+const SYNCABLE = ['todo', 'work', 'shopping', 'packing'];
 function todoTargetOptions(s, nameForNew) {
-  const lists = S.data.lists.filter((l) => IMPORTABLE.includes(l.type));
+  const lists = S.data.lists.filter((l) => SYNCABLE.includes(l.type));
   return `<option value="new" ${s.target === 'new' ? 'selected' : ''}>${nameForNew ? `New list – ${esc(nameForNew)}` : 'New list'}</option>${lists.map((l) => `<option value="${l.id}" ${s.target === l.id ? 'selected' : ''}>${esc(l.title)}</option>`).join('')}`;
 }
 function todoTargetFields(s, nameForNew) {
   return `<div class="group"><div class="field"><label>Put into</label><select data-change="todoField" data-f="target">${todoTargetOptions(s, nameForNew)}</select></div>
-    ${s.target === 'new' ? `<div class="field"><label>List type</label><select data-change="todoField" data-f="newType">${IMPORTABLE.map((t) => `<option value="${t}" ${s.newType === t ? 'selected' : ''}>${TYPES[t].name}</option>`).join('')}</select></div>` : ''}</div>`;
+    ${s.target === 'new' ? `<div class="field"><label>List type</label><select data-change="todoField" data-f="newType">${SYNCABLE.map((t) => `<option value="${t}" ${s.newType === t ? 'selected' : ''}>${TYPES[t].name}</option>`).join('')}</select></div>` : ''}</div>`;
 }
 const modeSeg = (s) => `<div class="group" style="margin-top:12px"><div class="field col"><label>How it stays in step</label><div class="seg">${[['0', 'Import only'], ['1', 'Two-way']].map(([v, l]) => `<button class="${(s.twoWay ? '1' : '0') === v ? 'on' : ''}" data-a="todoMode" data-v="${v}">${l}</button>`).join('')}</div></div></div>
   <p class="hint">${s.twoWay ? 'Changes in either app show up in both — ticks, edits, new items and deletions.' : 'New and changed tasks come across from To Do. Changes here don’t go back to To Do.'}</p>`;
@@ -1445,9 +1540,10 @@ const A = {
   toggle: async (el) => {
     const it = getItem(el.dataset.id), l = getList(it.list_id);
     if (l.type === 'christmas' && !it.parent_id) {
+      if (isMyWish(it)) return toast('That’s on your list — no peeking!');
       const order = ['idea', 'bought', 'wrapped'];
-      const next = order[(order.indexOf(it.data?.status || 'idea') + 1) % 3];
-      return upd('items', { id: it.id }, { data: { ...it.data, status: next }, done: next === 'wrapped', done_by: next === 'wrapped' ? S.me : null });
+      if (navigator.vibrate) navigator.vibrate(8);
+      return setGift(it, { status: order[(order.indexOf(giftState(it.id)) + 1) % 3] });
     }
     const done = !it.done;
     const patch = { done, done_by: done ? S.me : null, done_at: done ? new Date().toISOString() : null };
@@ -1483,9 +1579,10 @@ const A = {
     upd('items', { id: it.id }, { assignees: ids.every((x) => it.assignees.includes(x)) ? [] : ids });
     renderSheets(true);
   },
-  priority: (el) => { const it = getItem(el.dataset.id); upd('items', { id: it.id }, { priority: it.priority ? 0 : 1 }); renderSheets(true); },
+  setPriority: (el) => { upd('items', { id: el.dataset.id }, { priority: +el.dataset.v }); renderSheets(true); },
+  giftBuyer: (el) => { const it = getItem(el.dataset.id), g = giftOf(it.id) || {}; setGift(it, { buyer: g.buyer === el.dataset.m ? null : el.dataset.m }); renderSheets(true); },
   workStatus: (el) => { const v = el.dataset.v; upd('items', { id: el.dataset.id }, { status: v, done: v === 'done', done_by: v === 'done' ? S.me : null, done_at: v === 'done' ? new Date().toISOString() : null }); renderSheets(true); },
-  giftStatus: (el) => { const it = getItem(el.dataset.id), v = el.dataset.v; upd('items', { id: it.id }, { data: { ...it.data, status: v }, done: v === 'wrapped' }); renderSheets(true); },
+  giftStatus: (el) => { setGift(getItem(el.dataset.id), { status: el.dataset.v }); renderSheets(true); },
   secret: (el) => {
     const it = getItem(el.dataset.id), m = el.dataset.m;
     const h = (it.hidden_from || []).includes(m) ? it.hidden_from.filter((x) => x !== m) : [...(it.hidden_from || []), m];
@@ -1639,9 +1736,9 @@ const A = {
     const s = topSheet();
     s.msList = el.dataset.id;
     const L = s.msLists.find((x) => x.id === s.msList);
-    const match = S.data.lists.find((l) => IMPORTABLE.includes(l.type) && l.title.toLowerCase() === L.name.toLowerCase());
+    const match = S.data.lists.find((l) => SYNCABLE.includes(l.type) && l.title.toLowerCase() === L.name.toLowerCase());
     s.target = match ? match.id : 'new';
-    s.newType = guessType(L.name);
+    s.newType = SYNCABLE.includes(guessType(L.name)) ? guessType(L.name) : 'todo';
     s.tasks = null; s.picked = [];
     renderSheets(true);
     if (s.mode === 'pick') {
@@ -1710,7 +1807,8 @@ const A = {
       if (l.type === 'shopping') { const q = parseQty(text); text = q.text; extra.quantity = q.qty || null; extra.category = guessAisle(q.text); }
       if (l.type === 'work') extra.status = p.done ? 'done' : 'todo';
       if (l.type === 'packing') extra.data = { bag: ui('bag-' + l.id, S.me) };
-      if (l.type === 'christmas') extra.data = { status: 'idea', for: ui('for-' + l.id, null) };
+      if (l.type === 'christmas') extra.data = { for: ui('for-' + l.id, null) };
+      if (l.type === 'packing') { const q = parsePackQty(text); text = q.text; extra.quantity = q.qty || null; }
       if (existing.has(text.toLowerCase())) continue;
       existing.add(text.toLowerCase());
       rows.push(newItem(l, text, extra));
@@ -1794,13 +1892,15 @@ const ENTER = {
     if (l.type === 'christmas') {
       const f = ui('for-' + l.id, null);
       const hide = f && member(f) && f !== S.me && listMembers(l).some((m) => m.id === f) ? [f] : [];
-      return ins('items', newItem(l, raw, { data: { for: f, status: 'idea' }, hidden_from: hide }));
+      return ins('items', newItem(l, raw, { data: { for: f }, hidden_from: hide }));
     }
     if (l.type === 'packing') {
       const b = ui('bag-' + l.id, S.me);
-      return ins('items', newItem(l, raw, { data: { bag: b }, assignees: b === 'shared' ? [] : [b] }));
+      const p = parsePackQty(raw);
+      return ins('items', newItem(l, p.text, { quantity: p.qty || null, data: { bag: b }, assignees: b === 'shared' ? [] : [b] }));
     }
     if (l.type === 'work') return ins('items', newItem(l, raw, { status: ui('ws-' + l.id, 'todo') === 'doing' ? 'doing' : 'todo', assignees: [S.me] }));
+    if (l.type === 'notice') return;
     const solo = listMembers(l).length === 1;
     return ins('items', newItem(l, raw, { assignees: solo ? [S.me] : [] }));
   },
@@ -1819,14 +1919,16 @@ const CHANGE = {
   itemField: (el) => upd('items', { id: el.dataset.id }, { [el.dataset.f]: el.value || null }),
   giftFor: async (el) => {
     const it = getItem(el.dataset.id);
+    if (isMyWish(it)) { renderSheets(true); return; }
     let v = el.value;
     if (v === '__other') { v = ((await askText('Who is the gift for?', 'e.g. Grandma')) || '').trim(); if (!v) { renderSheets(true); return; } }
     const l = getList(it.list_id);
     let hidden = it.hidden_from || [];
-    if (member(v) && v !== S.me && listMembers(l).some((m) => m.id === v) && !hidden.includes(v)) hidden = [...hidden, v];
+    if (member(v) && v !== S.me && v !== it.created_by && listMembers(l).some((m) => m.id === v) && !hidden.includes(v)) hidden = [...hidden, v];
     upd('items', { id: it.id }, { data: { ...it.data, for: v || null }, hidden_from: hidden });
     renderSheets(true);
   },
+  giftNote: (el) => setGift(getItem(el.dataset.id), { note: el.value.trim() || null }),
   giftPrice: (el) => { const it = getItem(el.dataset.id); const n = parseFloat(el.value.replace(/[£,]/g, '')); upd('items', { id: it.id }, { data: { ...it.data, price: isNaN(n) ? null : n } }); },
   giftLink: (el) => { const it = getItem(el.dataset.id); let v = el.value.trim(); if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v; upd('items', { id: it.id }, { data: { ...it.data, link: v || null } }); renderSheets(true); },
   packBag: (el) => { const it = getItem(el.dataset.id); const b = el.value; upd('items', { id: it.id }, { data: { ...it.data, bag: b }, assignees: b === 'shared' ? it.assignees : [b] }); renderSheets(true); },
@@ -1850,7 +1952,590 @@ const INPUT = {
   noticeField: (el) => { const d = topSheet().draft; d[el.dataset.f] = el.value; const b = $('[data-a="saveNotice"]'); if (b) { b.disabled = !d.text.trim(); b.style.opacity = d.text.trim() ? 1 : 0.4; } },
 };
 
+/* ============================================================
+   Christmas — private gift status
+   ============================================================ */
+async function setGift(it, patch) {
+  if (!it || isMyWish(it)) return;
+  const cur = giftOf(it.id) || { item_id: it.id, status: 'idea', buyer: null, note: null };
+  const row = { ...cur, ...patch, item_id: it.id, updated_by: S.me, updated_at: new Date().toISOString() };
+  if (patch.status && patch.status !== 'idea' && !row.buyer) row.buyer = S.me;
+  if (row.status === 'idea' && !row.buyer && !row.note) {
+    if (giftOf(it.id)) return del('gift_status', { item_id: it.id });
+    return;
+  }
+  return ups('gift_status', row, 'item_id');
+}
+
+/* ============================================================
+   Press and hold to move items
+   ============================================================ */
+const DRAG = { timer: null, start: null, row: null, group: null, active: false, lastY: 0, until: 0, raf: 0, pending: false, before: '', lastTouch: 0 };
+function dragRowFrom(t) {
+  if (!t || !t.closest) return null;
+  if (t.closest('.check, .seen-btn, input, textarea, select, a, .wish')) return null;
+  const row = t.closest('[data-iid]');
+  if (!row || !row.parentElement || !row.parentElement.hasAttribute('data-reorder')) return null;
+  return row;
+}
+function pressStart(t, x, y) {
+  cancelPress();
+  const row = dragRowFrom(t);
+  if (!row) return;
+  DRAG.row = row; DRAG.iid = row.dataset.iid; DRAG.start = { x, y }; DRAG.lastY = y;
+  DRAG.timer = setTimeout(liftRow, 400);
+}
+function cancelPress() { clearTimeout(DRAG.timer); DRAG.timer = null; }
+function liftRow() {
+  DRAG.timer = null;
+  if (DRAG.row && !DRAG.row.isConnected) DRAG.row = document.querySelector(`[data-iid="${DRAG.iid}"]`);
+  if (!DRAG.row || !DRAG.row.parentElement?.hasAttribute('data-reorder')) return;
+  DRAG.active = true;
+  DRAG.group = DRAG.row.parentElement;
+  DRAG.before = [...DRAG.group.querySelectorAll(':scope > [data-iid]')].map((e) => e.dataset.iid).join();
+  DRAG.row.classList.add('lifted');
+  document.body.classList.add('dragging');
+  if (navigator.vibrate) navigator.vibrate(12);
+  const step = () => {
+    if (!DRAG.active) return;
+    const sc = DRAG.row.closest('.sheet');
+    const top = sc ? sc.getBoundingClientRect().top : 0;
+    const bottom = sc ? sc.getBoundingClientRect().bottom : innerHeight;
+    const v = DRAG.lastY < top + 80 ? -9 : DRAG.lastY > bottom - 80 ? 9 : 0;
+    if (v) { if (sc) sc.scrollTop += v; else window.scrollBy(0, v); placeRow(DRAG.lastY); }
+    DRAG.raf = requestAnimationFrame(step);
+  };
+  DRAG.raf = requestAnimationFrame(step);
+}
+function placeRow(y) {
+  const sibs = [...DRAG.group.children].filter((c) => c !== DRAG.row && c.hasAttribute('data-iid'));
+  let before = null;
+  for (const s of sibs) { const r = s.getBoundingClientRect(); if (y < r.top + r.height / 2) { before = s; break; } }
+  if (before) { if (DRAG.row.nextElementSibling !== before) DRAG.group.insertBefore(DRAG.row, before); }
+  else { const last = sibs[sibs.length - 1]; if (last && last.nextElementSibling !== DRAG.row) last.after(DRAG.row); }
+}
+function pressMove(x, y, e) {
+  if (DRAG.active) { if (e.cancelable) e.preventDefault(); DRAG.lastY = y; placeRow(y); return; }
+  if (DRAG.timer && Math.hypot(x - DRAG.start.x, y - DRAG.start.y) > 8) cancelPress();
+}
+function pressEnd() {
+  cancelPress();
+  if (!DRAG.active) return;
+  cancelAnimationFrame(DRAG.raf);
+  DRAG.active = false;
+  DRAG.until = Date.now() + 450;
+  DRAG.row.classList.remove('lifted');
+  document.body.classList.remove('dragging');
+  const ids = [...DRAG.group.querySelectorAll(':scope > [data-iid]')].map((e) => e.dataset.iid);
+  if (ids.join() !== DRAG.before) savePositions(ids, DRAG.group.dataset.order === 'desc');
+  const pending = DRAG.pending;
+  DRAG.pending = false; DRAG.row = null; DRAG.group = null;
+  if (pending) { render(); renderSheets(true); }
+}
+async function savePositions(ids, desc) {
+  const pos = ids.map((id) => +(getItem(id)?.position) || 0).sort((a, b) => a - b);
+  if (desc) pos.reverse();
+  for (let i = 1; i < pos.length; i++) {
+    if (desc ? pos[i] >= pos[i - 1] : pos[i] <= pos[i - 1]) pos[i] = pos[i - 1] + (desc ? -0.001 : 0.001);
+  }
+  const changes = ids.map((id, i) => ({ id, position: pos[i] })).filter((c) => getItem(c.id) && getItem(c.id).position !== c.position);
+  changes.forEach((c) => applyLocal('items', 'update', { id: c.id }, { position: c.position }));
+  render(); renderSheets(true);
+  try {
+    await Promise.all(changes.map((c) => store.update('items', { id: c.id }, { position: c.position })));
+    if (DEMO) await reload();
+  } catch (e) { console.error(e); toast('Couldn’t save the new order'); reload(); }
+}
+document.addEventListener('touchstart', (e) => { DRAG.lastTouch = Date.now(); if (e.touches.length === 1) pressStart(e.target, e.touches[0].clientX, e.touches[0].clientY); else { cancelPress(); } }, { passive: true });
+document.addEventListener('touchmove', (e) => { const t = e.touches[0]; if (t) pressMove(t.clientX, t.clientY, e); }, { passive: false });
+document.addEventListener('touchend', () => pressEnd());
+document.addEventListener('touchcancel', () => pressEnd());
+document.addEventListener('mousedown', (e) => { if (Date.now() - DRAG.lastTouch < 900 || e.button !== 0) return; pressStart(e.target, e.clientX, e.clientY); });
+document.addEventListener('mousemove', (e) => { if (Date.now() - DRAG.lastTouch < 900) return; if (DRAG.active || DRAG.timer) pressMove(e.clientX, e.clientY, e); });
+document.addEventListener('mouseup', () => { if (Date.now() - DRAG.lastTouch < 900) return; pressEnd(); });
+document.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('[data-iid]')) e.preventDefault(); });
+
+/* ============================================================
+   Countdowns
+   ============================================================ */
+const FULL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+function cdParts(target) {
+  const t = new Date(target), now = new Date();
+  const ms = t - now, past = ms < 0, abs = Math.abs(ms);
+  const days = Math.floor(abs / 864e5), hrs = Math.floor((abs % 864e5) / 36e5), mins = Math.floor((abs % 36e5) / 6e4);
+  let a = past ? t : now, b = past ? now : t;
+  let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  const plus = (n) => { const x = new Date(a); x.setMonth(x.getMonth() + n); return x; };
+  if (plus(months) > b) months--;
+  const remDays = Math.floor((b - plus(Math.max(0, months))) / 864e5);
+  const sameDay = ymd(t) === ymd(now);
+  return { past, days, hrs, mins, months: Math.max(0, months), remDays, sameDay };
+}
+function cdInner(target, v) {
+  const p = cdParts(target);
+  if (p.past) {
+    const ago = p.sameDay ? 'Today!' : `${plural(p.days, 'day')} ago`;
+    return v === 'big' ? `<div class="cd-num">🎉</div><div class="cd-hm">${ago}</div>` : `<span class="cd-small-num">${p.sameDay ? '🎉' : ago}</span>`;
+  }
+  const monthLine = p.months ? `${plural(p.months, 'month')}${p.remDays ? ', ' + plural(p.remDays, 'day') : ''}` : '';
+  if (v === 'big') {
+    const lead = p.days ? `<div class="cd-num">${p.days.toLocaleString('en-GB')}</div><div class="cd-unit">${p.days === 1 ? 'day' : 'days'}</div><div class="cd-hm">${plural(p.hrs, 'hr')} ${plural(p.mins, 'min')}</div>`
+      : `<div class="cd-num">${p.hrs}</div><div class="cd-unit">${p.hrs === 1 ? 'hour' : 'hours'}</div><div class="cd-hm">${plural(p.mins, 'min')}</div>`;
+    return lead + (monthLine ? `<div class="cd-mo">${monthLine}</div>` : '');
+  }
+  if (v === 'small') {
+    return p.days ? `<span class="cd-small-num">${p.days.toLocaleString('en-GB')}</span><span class="cd-small-unit">${p.days === 1 ? 'day' : 'days'}</span><span class="cd-small-hm">${p.hrs}h ${p.mins}m</span>`
+      : `<span class="cd-small-num">${p.hrs}</span><span class="cd-small-unit">hrs</span><span class="cd-small-hm">${p.mins}m</span>`;
+  }
+  return p.days ? `${plural(p.days, 'day')} ${plural(p.hrs, 'hr')}` : `${plural(p.hrs, 'hr')} ${plural(p.mins, 'min')}`;
+}
+const cdBox = (c, v) => `<span class="cd-live" data-cd="${esc(c.target)}" data-v="${v}">${cdInner(c.target, v)}</span>`;
+function tickCountdowns() { document.querySelectorAll('[data-cd]').forEach((el) => { el.innerHTML = cdInner(el.dataset.cd, el.dataset.v); }); }
+setInterval(tickCountdowns, 20000);
+const cdColour = (c) => c.colour || (c.list_id && getList(c.list_id) ? listColour(getList(c.list_id)) : '#5E5CE6');
+function fmtWhen(target) {
+  const d = new Date(target);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${fmtDay(d)} ${d.getFullYear()}${hm !== '00:00' ? ' · ' + hm : ''}`;
+}
+const cdSorted = (list) => [...list].sort((a, b) => new Date(a.target) - new Date(b.target));
+const upcoming = (c) => new Date(c.target) > Date.now() - 864e5;
+
+function homeCountdowns() {
+  if (missing('countdowns')) return '';
+  const cds = cdSorted(S.data.countdowns.filter(upcoming)).slice(0, 8);
+  const cards = cds.map((c) => `<button class="cd-mini" style="--c:${cdColour(c)}" data-a="editCd" data-id="${c.id}"><span class="cd-mini-title">${esc(c.title)}</span>${cdBox(c, 'small')}</button>`).join('');
+  return `<div class="section-label"><span>Countdowns</span><button data-a="go" data-h="#/countdowns">See all</button></div>
+    <div class="cd-strip">${cards}<button class="cd-mini add" data-a="newCd">${icon('plus', 22, 2.4)}<span class="cd-mini-title">New</span></button></div>`;
+}
+function listCountdowns(l) {
+  if (missing('countdowns')) return '';
+  const cds = cdSorted(S.data.countdowns.filter((c) => c.list_id === l.id && upcoming(c)));
+  if (!cds.length) return '';
+  return `<div class="cd-chips">${cds.map((c) => `<button class="cd-chip" style="--c:${cdColour(c)}" data-a="editCd" data-id="${c.id}">${icon('cal', 15, 2.2)}<b>${esc(c.title)}</b>${cdBox(c, 'chip')}</button>`).join('')}</div>`;
+}
+function departureCards(l) {
+  if (missing('countdowns')) return '';
+  const cds = cdSorted(S.data.countdowns.filter((c) => c.list_id === l.id && upcoming(c)));
+  const cards = cds.map((c) => `<div class="cd-card hero" style="--c:${cdColour(c)}" data-a="editCd" data-id="${c.id}">
+      <div class="cd-top"><span class="cd-title">✈️ ${esc(c.title)}</span><span class="cd-date">${fmtWhen(c.target)}</span></div>
+      <div class="cd-body">${cdBox(c, 'big')}</div></div>`).join('');
+  return `<div class="cd-hero-wrap">${cards}<button class="link-btn" data-a="newCd" data-list="${l.id}" data-kind="departure" style="padding-top:${cds.length ? 6 : 0}px">${cds.length ? '+ Add another countdown' : '✈️ Add departure date'}</button></div>`;
+}
+function countdownsView() {
+  const back = `<div class="nav"><button class="back" data-a="go" data-h="#/">${icon('chevL', 22, 2.4)}Lists</button><div class="actions"><button class="icon-btn solid" data-a="newCd" aria-label="New countdown">${icon('plus', 20, 2.4)}</button></div></div><h1 class="large">Countdowns</h1>`;
+  if (missing('countdowns')) return back + '<div class="empty"><div class="big">One more setup step</div>Run the November update in Supabase to switch on countdowns.</div>';
+  const all = cdSorted(S.data.countdowns);
+  const next = all.filter(upcoming), old = all.filter((c) => !upcoming(c)).reverse();
+  const card = (c) => {
+    const l = c.list_id && getList(c.list_id);
+    return `<div class="cd-card" style="--c:${cdColour(c)}" data-a="editCd" data-id="${c.id}">
+      <div class="cd-top"><span class="cd-title">${esc(c.title)}</span>${l ? `<span class="pill">${icon(TYPES[l.type].icon, 12, 2.2)} ${esc(l.title)}</span>` : ''}</div>
+      <div class="cd-body">${cdBox(c, 'big')}</div>
+      <div class="cd-date">${fmtWhen(c.target)}</div></div>`;
+  };
+  return back + (next.length ? `<div class="cd-grid">${next.map(card).join('')}</div>` : '<div class="empty"><div class="big">Nothing to count down to</div>Add a trip, a birthday, a match or a deadline. You can link it to a list too.</div>')
+    + (old.length ? `<div class="section-label">Passed</div><div class="cd-grid past">${old.slice(0, 10).map(card).join('')}</div>` : '');
+}
+function countdownSheet(s) {
+  const d = s.draft;
+  const c = s.id ? S.data.countdowns.find((x) => x.id === s.id) : null;
+  const l = d.list_id && getList(d.list_id);
+  const canDel = c && (c.owner === S.me || (c.list_id && getList(c.list_id) && isAdmin(getList(c.list_id))));
+  const others = membersSorted().filter((m) => m.id !== (c ? c.owner : S.me));
+  const ok = d.title.trim() && d.date;
+  return head(c ? 'Countdown' : 'New countdown', c && canDel ? '<button class="txt danger" data-a="deleteCd">Delete</button>' : undefined, `<button class="txt r" data-a="saveCd" ${ok ? '' : 'disabled style="opacity:.4"'}>${c ? 'Save' : 'Add'}</button>`) + `
+    <input class="big-input" id="cd-title" value="${esc(d.title)}" placeholder="What are you counting down to?" data-input="cdField" data-f="title" autocomplete="off" style="margin-top:6px">
+    <div class="group" style="margin-top:12px">
+      <div class="field"><label>Date</label><input type="date" value="${d.date}" data-input="cdField" data-f="date"></div>
+      <div class="field"><label>Time</label><input type="time" value="${d.time}" data-input="cdField" data-f="time"></div>
+      <div class="field"><label>Link to a list</label><select data-change="cdList"><option value="">No list</option>${S.data.lists.map((x) => `<option value="${x.id}" ${d.list_id === x.id ? 'selected' : ''}>${esc(x.title)}</option>`).join('')}</select></div>
+    </div>
+    ${d.date ? `<div class="cd-preview" style="--c:${d.colour || (l ? listColour(l) : '#5E5CE6')}">${cdInner(new Date(`${d.date}T${d.time || '00:00'}`).toISOString(), 'big')}</div>` : ''}
+    <div class="section-label">Colour</div>${swatchHtml(d.colour, 'data-a="cdColour"')}
+    <div class="section-label">Who can see it</div>
+    ${l ? `<p class="hint" style="margin:0 4px 8px">Everyone on “${esc(l.title)}” can see it. Add anyone else below.</p>` : ''}
+    <div class="group" style="padding:12px 10px"><div class="who">${others.map((m) => `<button class="${d.members.includes(m.id) ? 'on' : ''}" data-a="cdMember" data-m="${m.id}">${avatar(m.id, 46)}${esc(m.name)}</button>`).join('')}</div></div>
+    <p class="hint">Shows on the home screen${l ? ' and at the top of the list' : ''} for everyone who can see it.</p>`;
+}
+Object.assign(A, {
+  newCd: (el) => {
+    const listId = el.dataset?.list || null, kind = el.dataset?.kind || 'general';
+    if (topSheet()?.kind === 'listMenu') S.sheets.pop();
+    const d = new Date(); d.setDate(d.getDate() + 7);
+    openSheet({ kind: 'countdown', focus: 'cd-title', draft: { title: kind === 'departure' ? 'Departure' : '', date: kind === 'departure' ? '' : ymd(d), time: kind === 'departure' ? '09:00' : '', colour: null, list_id: listId, members: [], kind } });
+  },
+  editCd: (el) => {
+    const c = S.data.countdowns.find((x) => x.id === el.dataset.id);
+    if (!c) return;
+    const t = new Date(c.target);
+    const time = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    openSheet({ kind: 'countdown', id: c.id, draft: { title: c.title, date: ymd(t), time: time === '00:00' ? '' : time, colour: c.colour, list_id: c.list_id, members: [...(c.members || [])], kind: c.kind } });
+  },
+  cdColour: (el) => { const d = topSheet().draft; d.colour = d.colour === el.dataset.c ? null : el.dataset.c; renderSheets(true); },
+  cdMember: (el) => { const d = topSheet().draft, m = el.dataset.m; d.members = d.members.includes(m) ? d.members.filter((x) => x !== m) : [...d.members, m]; renderSheets(true); },
+  saveCd: async () => {
+    const s = topSheet(), d = s.draft;
+    if (!d.title.trim() || !d.date) return;
+    const row = { title: d.title.trim(), target: new Date(`${d.date}T${d.time || '00:00'}`).toISOString(), colour: d.colour, list_id: d.list_id || null, members: d.members, kind: d.kind || 'general' };
+    S.sheets.pop();
+    if (s.id) await upd('countdowns', { id: s.id }, row);
+    else await ins('countdowns', { id: uid(), owner: S.me, created_at: new Date().toISOString(), ...row });
+    toast(s.id ? 'Countdown saved' : 'Countdown added');
+  },
+  deleteCd: async () => {
+    const s = topSheet();
+    if (!await ask('Delete this countdown for everyone?', 'Delete', true)) return;
+    S.sheets.pop();
+    await del('countdowns', { id: s.id });
+  },
+});
+Object.assign(CHANGE, { cdList: (el) => { topSheet().draft.list_id = el.value || null; renderSheets(true); } });
+Object.assign(INPUT, {
+  cdField: (el) => {
+    const s = topSheet(), d = s.draft;
+    d[el.dataset.f] = el.value;
+    const b = $('[data-a="saveCd"]'); const ok = d.title.trim() && d.date;
+    if (b) { b.disabled = !ok; b.style.opacity = ok ? 1 : 0.4; }
+    const pv = document.querySelector('.cd-preview');
+    if (pv && d.date) pv.innerHTML = cdInner(new Date(`${d.date}T${d.time || '00:00'}`).toISOString(), 'big');
+    else if (!pv && d.date && el.dataset.f !== 'title') renderSheets(true);
+  },
+});
+
+/* ============================================================
+   Monthly budget (Mike & Louise)
+   ============================================================ */
+const B_KINDS = { in: 'Money in', out: 'Bills & spending', save: 'Savings', transfer: 'Transfers' };
+const B_KIND_SHORT = { in: 'In', out: 'Out', save: 'Saving', transfer: 'Transfer' };
+const B_CATS = ['Mortgage / rent', 'Council tax', 'Energy', 'Water', 'Phone & broadband', 'Insurance', 'Car', 'Fuel', 'Food shopping', 'Kids', 'Clubs & activities', 'Subscriptions', 'Eating out', 'Holidays', 'Gifts', 'Other'];
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+const curMonth = () => monthKey(new Date());
+const addMonths = (k, n) => { const [y, m] = k.split('-').map(Number); return monthKey(new Date(y, m - 1 + n, 1)); };
+const monthLabel = (k, short) => { const [y, m] = k.split('-').map(Number); return short ? `${MONTHS[m - 1]} ${String(y).slice(2)}` : `${FULL_MONTHS[m - 1]} ${y}`; };
+const ordinal = (n) => n + (['th', 'st', 'nd', 'rd'][(n % 100 >> 3 ^ 1 && n % 10) || 0] || 'th');
+const n2 = (v) => Math.round((+v || 0) * 100) / 100;
+const gbp = (v) => { const x = n2(v); return (x < 0 ? '−' : '') + '£' + Math.abs(x).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+const bAccounts = () => [...S.data.budget_accounts].sort((a, b) => a.sort - b.sort);
+const bPots = () => [...S.data.budget_pots].sort((a, b) => a.sort - b.sort);
+const bAccount = (id) => S.data.budget_accounts.find((a) => a.id === id);
+const bPot = (id) => S.data.budget_pots.find((p) => p.id === id);
+const bEntries = (month) => S.data.budget_entries.filter((e) => e.month === month);
+const bMonths = () => [...new Set(S.data.budget_entries.map((e) => e.month))].sort().reverse();
+const bMonth = () => ui('bMonth', curMonth());
+function bTotals(month, acc, onlyIncluded = true) {
+  const es = bEntries(month).filter((e) => !onlyIncluded || e.included);
+  const sum = (f) => n2(es.filter(f).reduce((s, e) => s + (+e.amount || 0), 0));
+  let tIn, tOut, tSave;
+  if (!acc) { tIn = sum((e) => e.kind === 'in'); tOut = sum((e) => e.kind === 'out'); tSave = sum((e) => e.kind === 'save'); }
+  else {
+    tIn = sum((e) => (e.kind === 'in' && e.account_id === acc) || (e.kind === 'transfer' && e.to_account_id === acc));
+    tOut = sum((e) => (e.kind === 'out' && e.account_id === acc) || (e.kind === 'transfer' && e.account_id === acc));
+    tSave = sum((e) => e.kind === 'save' && e.account_id === acc);
+  }
+  return { in: tIn, out: tOut, save: tSave, left: n2(tIn - tOut - tSave) };
+}
+function potBalance(pot, upTo) {
+  return n2((+pot.opening || 0) + S.data.budget_entries.filter((e) => e.kind === 'save' && e.included && e.pot_id === pot.id && e.month <= upTo).reduce((s, e) => s + (+e.amount || 0), 0));
+}
+function budgetTile() {
+  const m = curMonth();
+  const has = bEntries(m).length;
+  const t = bTotals(m);
+  return `<button class="budget-tile" data-a="go" data-h="#/budget">
+    <span class="tile-icon sm" style="--c:#248A3D">£</span>
+    <span class="bt-main"><span class="bt-title">Budget · ${FULL_MONTHS[new Date().getMonth()]}</span><span class="bt-sub">${missing('budget_entries') ? 'Finish setting up' : has ? `In ${gbp(t.in)} · Out ${gbp(t.out + t.save)}` : 'Start this month'}</span></span>
+    ${has ? `<span class="bt-left ${t.left < 0 ? 'neg' : ''}">${gbp(t.left)}<small>left</small></span>` : ''}
+    <span class="chev">${icon('chevR', 16, 2.4)}</span></button>`;
+}
+function budgetRow(e, acc) {
+  const a = bAccount(e.account_id), to = bAccount(e.to_account_id), pot = bPot(e.pot_id);
+  const meta = [];
+  if (e.day) meta.push(`<span>${ordinal(e.day)}</span>`);
+  if (!acc && a) meta.push(`<span class="acc-dot" style="--c:${a.colour || '#8E8E93'}">${esc(a.name)}</span>`);
+  if (e.kind === 'transfer') meta.push(`<span>${esc(a?.name || '?')} → ${esc(to?.name || '?')}</span>`);
+  if (e.kind === 'save' && pot) meta.push(`<span>→ ${esc(pot.name)}</span>`);
+  if (e.category) meta.push(`<span>${esc(e.category)}</span>`);
+  if (e.note) meta.push('<span>📝</span>');
+  let sign = '';
+  if (e.kind === 'in' || (acc && e.kind === 'transfer' && e.to_account_id === acc)) sign = 'in';
+  return `<div class="row b-row ${e.included ? '' : 'off'}" style="--indent:50px">
+    <button class="check ${e.included ? 'on' : ''}" style="--c:var(--accent)" data-a="bToggle" data-id="${e.id}" aria-label="Include"></button>
+    <div class="row-main" data-a="bEdit" data-id="${e.id}"><div class="row-title">${esc(e.name)}</div>${meta.length ? `<div class="row-meta">${meta.join('')}</div>` : ''}</div>
+    <span class="b-amt ${sign}">${sign ? '+' : ''}${gbp(e.amount)}</span></div>`;
+}
+function budgetView() {
+  const nav = `<div class="nav"><button class="back" data-a="go" data-h="#/">${icon('chevL', 22, 2.4)}Lists</button><div class="actions">${canBudget() && !missing('budget_entries') && bAccounts().length ? `<button class="icon-btn" data-a="bAccounts" aria-label="Accounts and pots">${icon('more', 20, 2.6)}</button><button class="icon-btn solid" data-a="bNew" aria-label="Add">${icon('plus', 20, 2.4)}</button>` : ''}</div></div><h1 class="large">Budget</h1>`;
+  if (!canBudget()) return nav + '<div class="empty"><div class="big">Private</div>Only Mike and Louise can see the budget.</div>';
+  if (missing('budget_entries')) return nav + '<div class="empty"><div class="big">One more setup step</div>Run the November update in Supabase to switch on the budget.</div>';
+  if (!bAccounts().length) {
+    return nav + `<div class="card-pad"><div class="big-q">Which accounts do you want to track?</div>
+      <p class="hint" style="margin:6px 0 14px">Tap to add. You can rename or add more later.</p>
+      <div class="chips wrap">${['Joint account', 'Mike’s account', 'Louise’s account', 'Credit card'].map((n) => `<button class="chip" data-a="bQuickAcc" data-n="${esc(n)}">${icon('plus', 14, 2.6)} ${esc(n)}</button>`).join('')}</div>
+      <div style="margin-top:16px"><button class="btn secondary" data-a="bAccounts">Add a different account</button></div></div>
+      <p class="hint" style="margin-top:14px">Only Mike and Louise can see anything on this page.</p>`;
+  }
+  const m = bMonth(), acc = ui('bAcc', null);
+  const accs = bAccounts();
+  const monthNav = `<div class="week-nav"><button class="icon-btn" data-a="bMonth" data-d="-1">${icon('chevL', 18, 2.6)}</button><div class="label">${monthLabel(m)}<small>${m === curMonth() ? 'This month' : m < curMonth() ? 'Past month' : 'Future month'}</small></div><button class="icon-btn" data-a="bMonth" data-d="1">${icon('chevR', 18, 2.6)}</button></div>`;
+  const chips = `<div class="chips" style="margin-top:12px">${[[null, 'All accounts'], ...accs.map((a) => [a.id, a.name])].map(([id, n]) => `<button class="chip ${acc === id ? 'on' : ''}" data-a="bAcc" data-v="${id || ''}">${id ? `<span class="dot" style="--c:${bAccount(id).colour || '#8E8E93'}"></span>` : ''}${esc(n)}</button>`).join('')}</div>`;
+  const all = bEntries(m);
+  if (!all.length) {
+    const prev = bMonths().find((k) => k < m);
+    return nav + monthNav + `<div class="empty"><div class="big">Nothing in ${monthLabel(m)} yet</div>${prev ? `Start from ${monthLabel(prev)} — everything is copied across and ticked.` : 'Add your income, bills and savings. Next month you can copy them across in one tap.'}<br><br>
+      ${prev ? `<button class="btn" data-a="bCopy" data-from="${prev}">Copy ${monthLabel(prev)}</button><div style="height:10px"></div>` : ''}
+      <button class="btn ${prev ? 'secondary' : ''}" data-a="bNew">${icon('plus', 20, 2.4)} Add the first item</button></div>` + budgetLog(m) + potsSection(m);
+  }
+  const t = bTotals(m, acc), full = bTotals(m, acc, false);
+  const diff = n2(full.out + full.save - t.out - t.save - (full.in - t.in));
+  const shown = all.filter((e) => !acc || e.account_id === acc || e.to_account_id === acc);
+  const sortE = (a, b) => (a.day || 99) - (b.day || 99) || a.name.localeCompare(b.name);
+  let sections = '';
+  for (const k of ['in', 'out', 'save', 'transfer']) {
+    const rows = shown.filter((e) => e.kind === k).sort(sortE);
+    if (!rows.length && k === 'transfer') continue;
+    const tot = n2(rows.filter((e) => e.included).reduce((s, e) => s + (+e.amount || 0), 0));
+    sections += `<div class="section-label"><span>${B_KINDS[k]}${rows.length ? ` · ${gbp(tot)}` : ''}</span><button data-a="bNew" data-kind="${k}">+ Add</button></div>
+      ${rows.length ? `<div class="group">${rows.map((e) => budgetRow(e, acc)).join('')}</div>` : ''}`;
+  }
+  const summary = `<div class="b-summary">
+      <div class="b-left ${t.left < 0 ? 'neg' : ''}"><span>${acc ? esc(bAccount(acc).name) + ' · ' : ''}Left over</span><b>${gbp(t.left)}</b></div>
+      <div class="b-grid"><div><span>In</span><b class="in">${gbp(t.in)}</b></div><div><span>Out</span><b>${gbp(t.out)}</b></div><div><span>Savings</span><b>${gbp(t.save)}</b></div></div>
+      ${diff ? `<div class="b-diff">Unticked items: ${diff > 0 ? `you’d save ${gbp(diff)}` : `${gbp(-diff)} less coming in`}</div>` : '<div class="b-diff">Untick anything to see the difference</div>'}
+    </div>`;
+  const perAcc = !acc && accs.length > 1 ? `<div class="section-label">By account</div><div class="group">${accs.map((a) => { const x = bTotals(m, a.id); return `<div class="row tap" data-a="bAcc" data-v="${a.id}"><span class="acc-swatch" style="--c:${a.colour || '#8E8E93'}"></span><div class="row-main"><div class="row-title">${esc(a.name)}</div><div class="row-sub">In ${gbp(x.in)} · Out ${gbp(x.out)}${x.save ? ` · Saved ${gbp(x.save)}` : ''}</div></div><span class="b-amt ${x.left < 0 ? 'neg' : ''}">${gbp(x.left)}</span></div>`; }).join('')}</div>` : '';
+  return nav + monthNav + chips + summary + perAcc + sections + potsSection(m) + budgetLog(m);
+}
+function potsSection(m) {
+  const pots = bPots();
+  const rows = pots.map((p) => {
+    const bal = potBalance(p, m);
+    const added = n2(bEntries(m).filter((e) => e.kind === 'save' && e.included && e.pot_id === p.id).reduce((s, e) => s + (+e.amount || 0), 0));
+    const pct = p.target ? Math.min(100, (bal / p.target) * 100) : 0;
+    return `<div class="pot" style="--c:${p.colour || '#30B05A'}" data-a="bPot" data-id="${p.id}">
+      <div class="pot-top"><b>${esc(p.name)}</b><span>${gbp(bal)}</span></div>
+      ${p.target ? `<div class="bar"><i style="width:${pct}%"></i></div><div class="pot-sub">${Math.round(pct)}% of ${gbp(p.target)}${added ? ` · +${gbp(added)} this month` : ''}</div>` : `<div class="pot-sub">${added ? `+${gbp(added)} this month` : 'Nothing added this month'}</div>`}
+    </div>`;
+  }).join('');
+  const total = n2(pots.reduce((s, p) => s + potBalance(p, m), 0));
+  return `<div class="section-label"><span>Savings pots${pots.length ? ` · ${gbp(total)}` : ''}</span><button data-a="bPot">+ New pot</button></div>
+    ${pots.length ? `<div class="pots">${rows}</div>` : '<p class="hint" style="margin-top:0">Make a pot for each thing you save for — holidays, Christmas, a rainy day.</p>'}`;
+}
+function budgetLog(cur) {
+  const months = bMonths();
+  if (!months.length) return '';
+  const rows = months.slice(0, 24).map((k) => { const t = bTotals(k); return `<tr class="${k === cur ? 'on' : ''}" data-a="bGoMonth" data-m="${k}"><td>${monthLabel(k, true)}</td><td class="in">${gbp(t.in)}</td><td>${gbp(t.out)}</td><td>${gbp(t.save)}</td><td class="${t.left < 0 ? 'neg' : ''}"><b>${gbp(t.left)}</b></td></tr>`; }).join('');
+  const tot = months.reduce((s, k) => { const t = bTotals(k); return { in: s.in + t.in, out: s.out + t.out, save: s.save + t.save, left: s.left + t.left }; }, { in: 0, out: 0, save: 0, left: 0 });
+  return `<div class="section-label">Monthly log</div>
+    <div class="group b-log-wrap"><table class="b-log"><thead><tr><th>Month</th><th>In</th><th>Out</th><th>Saved</th><th>Left</th></tr></thead><tbody>${rows}</tbody>
+    ${months.length > 1 ? `<tfoot><tr><td>Total</td><td class="in">${gbp(tot.in)}</td><td>${gbp(tot.out)}</td><td>${gbp(tot.save)}</td><td><b>${gbp(tot.left)}</b></td></tr></tfoot>` : ''}</table></div>
+    <p class="hint">All accounts, ticked items only. Tap a month to open it.</p>`;
+}
+function budgetEntrySheet(s) {
+  const d = s.draft;
+  const accs = bAccounts(), pots = bPots();
+  const later = s.id ? S.data.budget_entries.filter((e) => e.series === d.series && e.month > d.month).length : 0;
+  const ok = d.name.trim() && d.amount !== '' && !isNaN(parseFloat(d.amount));
+  const accSel = (f, label) => `<div class="field"><label>${label}</label><select data-change="bField" data-f="${f}">${f === 'to_account_id' ? '<option value="">Choose…</option>' : ''}${accs.map((a) => `<option value="${a.id}" ${d[f] === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>`;
+  return head(s.id ? 'Edit' : 'Add', s.id ? '<button class="txt danger" data-a="bDelete">Delete</button>' : undefined, `<button class="txt r" data-a="bSave" ${ok ? '' : 'disabled style="opacity:.4"'}>Save</button>`) + `
+    <div class="seg" style="margin:4px 0 12px">${Object.entries(B_KIND_SHORT).map(([k, v]) => `<button class="${d.kind === k ? 'on' : ''}" data-a="bKind" data-v="${k}">${v}</button>`).join('')}</div>
+    <input class="big-input" id="b-name" value="${esc(d.name)}" placeholder="${{ in: 'e.g. Salary', out: 'e.g. Mortgage', save: 'e.g. Holiday fund', transfer: 'e.g. Pocket money' }[d.kind]}" data-input="bText" data-f="name" autocomplete="off">
+    <div class="group" style="margin-top:12px">
+      <div class="field"><label>Amount (£)</label><input id="b-amount" inputmode="decimal" value="${esc(d.amount)}" placeholder="0.00" data-input="bText" data-f="amount"></div>
+      ${accSel('account_id', d.kind === 'transfer' ? 'From' : d.kind === 'in' ? 'Into' : 'From account')}
+      ${d.kind === 'transfer' ? accSel('to_account_id', 'To') : ''}
+      ${d.kind === 'save' ? `<div class="field"><label>Pot</label><select data-change="bField" data-f="pot_id"><option value="">No pot</option>${pots.map((p) => `<option value="${p.id}" ${d.pot_id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}<option value="__new">+ New pot…</option></select></div>` : ''}
+      ${d.kind === 'out' ? `<div class="field"><label>Category</label><input list="b-cats" value="${esc(d.category || '')}" placeholder="Optional" data-input="bText" data-f="category"></div><datalist id="b-cats">${[...new Set([...B_CATS, ...S.data.budget_entries.map((e) => e.category).filter(Boolean)])].map((c) => `<option value="${esc(c)}">`).join('')}</datalist>` : ''}
+      <div class="field"><label>Day of month</label><input inputmode="numeric" value="${d.day || ''}" placeholder="e.g. 1" data-input="bText" data-f="day"></div>
+      <div class="field tap" data-a="bIncluded"><label>Counted in totals</label><span style="flex:1"></span><span class="switch ${d.included ? 'on' : ''}"></span></div>
+    </div>
+    ${d.kind === 'save' ? '<p class="hint">To take money out of a pot, use a minus amount, e.g. −200.</p>' : ''}
+    <div class="section-label">Note</div><div class="group"><textarea class="textarea" style="min-height:64px" placeholder="Optional" data-input="bText" data-f="note">${esc(d.note || '')}</textarea></div>
+    ${later ? `<div class="group" style="margin-top:12px"><div class="field tap" data-a="bLater"><label>Also change later months (${later})</label><span style="flex:1"></span><span class="switch ${d.applyLater ? 'on' : ''}"></span></div></div>` : ''}
+    <p class="hint">${monthLabel(d.month)}. Each new month copies this month’s items, so changes carry forward.</p>`;
+}
+function budgetPotSheet(s) {
+  const d = s.draft;
+  const p = s.id ? bPot(s.id) : null;
+  return head(p ? 'Savings pot' : 'New pot', p ? '<button class="txt danger" data-a="bPotDelete">Delete</button>' : undefined, `<button class="txt r" data-a="bPotSave" ${d.name.trim() ? '' : 'disabled style="opacity:.4"'}>Save</button>`) + `
+    <input class="big-input" id="pot-name" value="${esc(d.name)}" placeholder="e.g. Holiday" data-input="bPotText" data-f="name" autocomplete="off" style="margin-top:6px">
+    <div class="group" style="margin-top:12px">
+      <div class="field"><label>Already in it (£)</label><input inputmode="decimal" value="${esc(d.opening)}" placeholder="0.00" data-input="bPotText" data-f="opening"></div>
+      <div class="field"><label>Target (£)</label><input inputmode="decimal" value="${esc(d.target)}" placeholder="Optional" data-input="bPotText" data-f="target"></div>
+    </div>
+    <div class="section-label">Colour</div>${swatchHtml(d.colour, 'data-a="bPotColour"')}
+    ${p ? `<div class="section-label">History</div><div class="group">${S.data.budget_entries.filter((e) => e.kind === 'save' && e.pot_id === p.id && e.included).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 24).map((e) => `<div class="row"><div class="row-main" style="cursor:default"><div class="row-title" style="font-size:15px">${monthLabel(e.month, true)} · ${esc(e.name)}</div></div><span class="b-amt ${+e.amount >= 0 ? 'in' : ''}">${+e.amount >= 0 ? '+' : ''}${gbp(e.amount)}</span></div>`).join('') || '<div class="row"><div class="row-main muted">Nothing paid in yet</div></div>'}</div>` : ''}
+    <p class="hint">The pot total is what was already in it plus every ticked saving into it, month by month.</p>`;
+}
+function budgetAccountsSheet() {
+  const accs = bAccounts();
+  return head('Accounts', '<span></span>') + `
+    <div class="group">${accs.map((a) => `<div class="row"><span class="acc-swatch" style="--c:${a.colour || '#8E8E93'}"></span><input class="acc-name" value="${esc(a.name)}" data-change="bAccName" data-id="${a.id}"><button class="link-btn" style="color:var(--red)" data-a="bAccDelete" data-id="${a.id}">Delete</button></div>`).join('')}
+      <div class="row"><span class="plus" style="width:20px">${icon('plus', 20, 2.4)}</span><input id="acc-new" class="acc-name" placeholder="Add an account" enterkeyhint="done" data-enter="bAccAdd" autocomplete="off"></div></div>
+    <p class="hint">Deleting an account removes its items from every month.</p>
+    <div class="section-label">Savings pots</div>
+    <div class="group">${bPots().map((p) => `<div class="row tap" data-a="bPot" data-id="${p.id}"><span class="acc-swatch" style="--c:${p.colour || '#30B05A'}"></span><div class="row-main"><div class="row-title">${esc(p.name)}</div><div class="row-sub">${gbp(potBalance(p, '9999-12-01'))}</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`).join('')}
+      <div class="row tap" data-a="bPot"><span class="plus" style="width:20px">${icon('plus', 20, 2.4)}</span><div class="row-main"><div class="row-title" style="color:var(--accent)">New pot</div></div></div></div>`;
+}
+const ACC_COLOURS = ['#0A84FF', '#FF375F', '#5E5CE6', '#30B05A', '#FF9500', '#00A5A8', '#BF5AF2', '#8E8E93'];
+function bDraftFrom(e) { return { ...e, amount: e.amount != null ? String(n2(e.amount)) : '', day: e.day || '', applyLater: true }; }
+Object.assign(A, {
+  bMonth: (el) => { S.ui.bMonth = addMonths(bMonth(), +el.dataset.d); render(); },
+  bGoMonth: (el) => { S.ui.bMonth = el.dataset.m; render(); window.scrollTo(0, 0); },
+  bAcc: (el) => { S.ui.bAcc = el.dataset.v || null; render(); },
+  bQuickAcc: (el) => ins('budget_accounts', { id: uid(), name: el.dataset.n, colour: ACC_COLOURS[bAccounts().length % ACC_COLOURS.length], sort: Date.now() / 1000, created_at: new Date().toISOString() }),
+  bAccounts: () => openSheet({ kind: 'bAccounts' }),
+  bAccDelete: async (el) => {
+    const a = bAccount(el.dataset.id);
+    const n = S.data.budget_entries.filter((e) => e.account_id === a.id).length;
+    if (!await ask(`Delete “${a.name}”${n ? ` and its ${n} item${n === 1 ? '' : 's'}` : ''}?`, 'Delete', true)) return;
+    applyLocal('budget_entries', 'remove', { account_id: a.id });
+    await del('budget_accounts', { id: a.id });
+    if (S.ui.bAcc === a.id) S.ui.bAcc = null;
+    renderSheets(true);
+  },
+  bNew: (el) => {
+    if (!bAccounts().length) return toast('Add an account first');
+    const acc = ui('bAcc', null) || bAccounts()[0].id;
+    openSheet({ kind: 'bEntry', focus: 'b-name', draft: { kind: el.dataset?.kind || 'out', name: '', amount: '', account_id: acc, to_account_id: '', pot_id: '', category: '', day: '', included: true, note: '', month: bMonth(), series: uid(), applyLater: true } });
+  },
+  bEdit: (el) => { const e = S.data.budget_entries.find((x) => x.id === el.dataset.id); if (e) openSheet({ kind: 'bEntry', id: e.id, draft: bDraftFrom(e) }); },
+  bKind: (el) => { topSheet().draft.kind = el.dataset.v; renderSheets(true); },
+  bIncluded: () => { const d = topSheet().draft; d.included = !d.included; renderSheets(true); },
+  bLater: () => { const d = topSheet().draft; d.applyLater = !d.applyLater; renderSheets(true); },
+  bToggle: (el) => { const e = S.data.budget_entries.find((x) => x.id === el.dataset.id); if (navigator.vibrate) navigator.vibrate(6); upd('budget_entries', { id: e.id }, { included: !e.included }); },
+  bSave: async () => {
+    const s = topSheet(), d = s.draft;
+    const amount = parseFloat(String(d.amount).replace(/[£,\s]/g, '').replace('−', '-'));
+    if (!d.name.trim() || isNaN(amount)) return;
+    if (d.kind === 'transfer' && (!d.to_account_id || d.to_account_id === d.account_id)) return toast('Choose a different account to transfer to');
+    const day = parseInt(d.day, 10);
+    const row = { kind: d.kind, name: d.name.trim(), amount: n2(amount), account_id: d.account_id || null, to_account_id: d.kind === 'transfer' ? d.to_account_id : null, pot_id: d.kind === 'save' ? d.pot_id || null : null, category: d.kind === 'out' ? d.category?.trim() || null : null, day: day >= 1 && day <= 31 ? day : null, note: d.note?.trim() || null };
+    S.sheets.pop();
+    if (s.id) {
+      await upd('budget_entries', { id: s.id }, { ...row, included: d.included });
+      if (d.applyLater) for (const e of S.data.budget_entries.filter((x) => x.series === d.series && x.month > d.month)) await upd('budget_entries', { id: e.id }, row);
+    } else {
+      await ins('budget_entries', { id: uid(), series: d.series, month: d.month, included: d.included, created_by: S.me, created_at: new Date().toISOString(), ...row });
+    }
+  },
+  bDelete: async () => {
+    const s = topSheet(), d = s.draft;
+    const later = S.data.budget_entries.filter((e) => e.series === d.series && e.month > d.month);
+    if (!await ask(later.length && d.applyLater ? `Delete “${d.name}” from ${monthLabel(d.month)} and the ${later.length} later month${later.length === 1 ? '' : 's'}?` : `Delete “${d.name}” from ${monthLabel(d.month)}?`, 'Delete', true)) return;
+    S.sheets.pop();
+    await del('budget_entries', { id: s.id });
+    if (d.applyLater) for (const e of later) await del('budget_entries', { id: e.id });
+  },
+  bCopy: async (el) => {
+    const from = el.dataset.from, to = bMonth();
+    const rows = bEntries(from).map((e) => ({ ...e, id: uid(), month: to, included: true, created_by: S.me, created_at: new Date().toISOString() }));
+    if (!rows.length) return;
+    await ins('budget_entries', rows);
+    toast(`Copied ${rows.length} items from ${monthLabel(from)}`);
+  },
+  bPot: (el) => {
+    const p = el.dataset?.id ? bPot(el.dataset.id) : null;
+    openSheet({ kind: 'bPot', id: p?.id, focus: p ? null : 'pot-name', draft: p ? { name: p.name, opening: p.opening != null ? String(n2(p.opening)) : '', target: p.target != null ? String(n2(p.target)) : '', colour: p.colour } : { name: '', opening: '', target: '', colour: '#30B05A' } });
+  },
+  bPotColour: (el) => { topSheet().draft.colour = el.dataset.c; renderSheets(true); },
+  bPotSave: async () => {
+    const s = topSheet(), d = s.draft;
+    if (!d.name.trim()) return;
+    const num = (v) => { const x = parseFloat(String(v).replace(/[£,\s]/g, '')); return isNaN(x) ? null : n2(x); };
+    const row = { name: d.name.trim(), opening: num(d.opening) || 0, target: num(d.target), colour: d.colour };
+    S.sheets.pop();
+    if (s.id) await upd('budget_pots', { id: s.id }, row);
+    else {
+      const id = uid();
+      await ins('budget_pots', { id, sort: Date.now() / 1000, created_at: new Date().toISOString(), ...row });
+      const t = topSheet();
+      if (t?.kind === 'bEntry' && t.draft.pickingPot) { t.draft.pot_id = id; t.draft.pickingPot = false; renderSheets(true); }
+    }
+  },
+  bPotDelete: async () => {
+    const s = topSheet();
+    if (!await ask('Delete this pot? Savings items stay but won’t be linked to a pot.', 'Delete', true)) return;
+    S.sheets.pop();
+    await del('budget_pots', { id: s.id });
+  },
+});
+Object.assign(CHANGE, {
+  bField: (el) => {
+    const d = topSheet().draft;
+    if (el.dataset.f === 'pot_id' && el.value === '__new') { d.pickingPot = true; renderSheets(true); A.bPot({ dataset: {} }); return; }
+    d[el.dataset.f] = el.value;
+    renderSheets(true);
+  },
+  bAccName: (el) => { const v = el.value.trim(); if (v) upd('budget_accounts', { id: el.dataset.id }, { name: v }); },
+});
+Object.assign(INPUT, {
+  bText: (el) => {
+    const d = topSheet().draft; d[el.dataset.f] = el.value;
+    const ok = d.name.trim() && d.amount !== '' && !isNaN(parseFloat(String(d.amount).replace(/[£,\s]/g, '').replace('−', '-')));
+    const b = $('[data-a="bSave"]'); if (b) { b.disabled = !ok; b.style.opacity = ok ? 1 : 0.4; }
+  },
+  bPotText: (el) => {
+    const d = topSheet().draft; d[el.dataset.f] = el.value;
+    const b = $('[data-a="bPotSave"]'); if (b) { b.disabled = !d.name.trim(); b.style.opacity = d.name.trim() ? 1 : 0.4; }
+  },
+});
+Object.assign(ENTER, {
+  bAccAdd: async (el) => {
+    const v = el.value.trim(); if (!v) return; el.value = '';
+    await ins('budget_accounts', { id: uid(), name: v, colour: ACC_COLOURS[bAccounts().length % ACC_COLOURS.length], sort: Date.now() / 1000, created_at: new Date().toISOString() });
+    renderSheets(true); setTimeout(() => document.getElementById('acc-new')?.focus(), 30);
+  },
+});
+
+/* Demo-only example budget (never used with the real database) */
+function seedBudget() {
+  const mk = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  const now = new Date();
+  const months = [-2, -1, 0].map((n) => mk(new Date(now.getFullYear(), now.getMonth() + n, 1)));
+  const id = () => uid();
+  const joint = id(), mike = id(), lou = id();
+  const holiday = id(), rainy = id(), xmas = id();
+  const accounts = [
+    { id: joint, name: 'Joint account', colour: '#0A84FF', sort: 1 },
+    { id: mike, name: 'Mike’s account', colour: '#5E5CE6', sort: 2 },
+    { id: lou, name: 'Louise’s account', colour: '#FF375F', sort: 3 },
+  ];
+  const pots = [
+    { id: holiday, name: 'Holiday', colour: '#FF9500', target: 3000, opening: 850, sort: 1 },
+    { id: rainy, name: 'Rainy day', colour: '#00A5A8', target: null, opening: 2400, sort: 2 },
+    { id: xmas, name: 'Christmas', colour: '#E0352B', target: 600, opening: 200, sort: 3 },
+  ];
+  const template = [
+    ['in', 'Mike salary', 2900, mike, null, null, null, 28],
+    ['in', 'Louise salary', 2100, lou, null, null, null, 25],
+    ['in', 'Child benefit', 176, joint, null, null, null, 15],
+    ['transfer', 'Mike → joint', 1700, mike, joint, null, null, 28],
+    ['transfer', 'Louise → joint', 1300, lou, joint, null, null, 25],
+    ['out', 'Mortgage', 1150, joint, null, null, 'Mortgage / rent', 1],
+    ['out', 'Council tax', 210, joint, null, null, 'Council tax', 1],
+    ['out', 'Energy', 165, joint, null, null, 'Energy', 5],
+    ['out', 'Broadband & TV', 72, joint, null, null, 'Phone & broadband', 12],
+    ['out', 'Food shopping', 650, joint, null, null, 'Food shopping', null],
+    ['out', 'Streaming', 28, joint, null, null, 'Subscriptions', 9],
+    ['out', 'Football club', 35, joint, null, null, 'Clubs & activities', 3],
+    ['out', 'Phone', 22, mike, null, null, 'Phone & broadband', 20],
+    ['out', 'Gym', 30, lou, null, null, 'Subscriptions', 2],
+    ['save', 'Holiday fund', 250, joint, null, holiday, null, 2],
+    ['save', 'Rainy day', 150, joint, null, rainy, null, 2],
+    ['save', 'Christmas', 100, joint, null, xmas, null, 2],
+  ];
+  const series = template.map(() => uid());
+  const entries = [];
+  months.forEach((month) => template.forEach(([kind, name, amount, account_id, to_account_id, pot_id, category, day], i) => {
+    entries.push({ id: uid(), series: series[i], month, kind, name, amount, account_id, to_account_id, pot_id, category, day, included: !(name === 'Streaming' && month === months[2]), note: null, created_by: 'mike' });
+  }));
+  return { budget_accounts: accounts, budget_pots: pots, budget_entries: entries };
+}
+
 document.addEventListener('click', (e) => {
+  if (Date.now() < DRAG.until) { e.preventDefault(); e.stopPropagation(); return; }
   const el = e.target.closest('[data-a]');
   if (!el || el.disabled) return;
   const fn = A[el.dataset.a];

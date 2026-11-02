@@ -183,7 +183,7 @@ function itemFromMS(t: Row, list: Row, member: string, tag: string | null, pos: 
     done, done_by: done ? member : null, done_at: done ? new Date().toISOString() : null,
     assignees: [], due: msDue(t), priority: t.importance === "high" ? 1 : 0,
     status: list.type === "work" ? (done ? "done" : "todo") : null, category, quantity, hidden_from: [],
-    data: list.type === "packing" ? { bag: "shared" } : list.type === "christmas" ? { status: done ? "wrapped" : "idea" } : {},
+    data: list.type === "packing" ? { bag: "shared" } : {},
     position: pos, created_by: member,
   };
 }
@@ -197,11 +197,11 @@ async function pull(t: Row, item: Row, kids: Row[], children: Row, list: Row, me
   if (!isNew) {
     const title = stripTag(t.title, tag) || item.text;
     const done = t.status === "completed";
-    const patch: Row = { notes: msNotes(t) || null, due: msDue(t), priority: t.importance === "high" ? 1 : 0, done };
+    const patch: Row = { notes: msNotes(t) || null, due: msDue(t), priority: t.importance === "high" ? (item.priority || 1) : 0, done };
     if (list.type === "shopping") { const p = parseQty(title); patch.text = p.text; patch.quantity = p.qty || null; } else patch.text = title;
     if (done !== !!item.done) { patch.done_by = done ? member : null; patch.done_at = done ? new Date().toISOString() : null; }
     if (list.type === "work") patch.status = done ? "done" : (item.status === "done" ? "todo" : item.status || "todo");
-    if (list.type === "christmas") patch.data = { ...(item.data || {}), status: done ? "wrapped" : (item.data?.status === "wrapped" ? "bought" : item.data?.status || "idea") };
+    if (list.type === "christmas") { delete patch.done; delete patch.done_by; delete patch.done_at; }
     await db.from("items").update(patch).eq("id", item.id);
   }
   if (!HAS_STEPS.has(list.type)) return children;
