@@ -27,6 +27,7 @@ const IC = {
   chevL: '<path d="m14.5 6-6 6 6 6"/>',
   people: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9.5" r="2.5"/><path d="M15.8 14.6c2.4-.4 4.2 1.1 4.7 4.4"/>',
   more: '<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>',
+  grip: '<path d="M5 9h14M5 15h14"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>',
   person: '<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c.8-4 3.8-6.3 7.5-6.3s6.7 2.3 7.5 6.3"/>',
   bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15ZM10 20.5a2.2 2.2 0 0 0 4 0"/>',
@@ -286,7 +287,7 @@ class SupaStore {
 
 class DemoStore {
   constructor() {
-    this.key = 'mcgaw-lists-demo-v3';
+    this.key = 'mcgaw-lists-demo-v4';
     try { this.db = JSON.parse(localStorage.getItem(this.key)); } catch { this.db = null; }
     if (!this.db) this.db = seedDemo();
     this.me = null;
@@ -452,9 +453,9 @@ function seedDemo() {
   const gift_status = [{ item_id: lego.id, status: 'bought', buyer: 'mike' }, { item_id: art.id, status: 'wrapped', buyer: 'louise' }];
   const at = (days, h = 0) => { const x = new Date(); x.setDate(x.getDate() + days); x.setHours(h, 0, 0, 0); return x.toISOString(); };
   const countdowns = [
-    { id: uid(), title: 'Departure', target: at(103, 6), colour: '#FF9500', kind: 'departure', list_id: 'l-pack', owner: 'louise', members: [] },
-    { id: uid(), title: 'Christmas Day', target: new Date(new Date().getFullYear(), 11, 25).toISOString(), colour: '#E0352B', kind: 'general', list_id: 'l-xmas', owner: 'mike', members: [] },
-    { id: uid(), title: 'Oscar’s birthday', target: at(41), colour: '#30B05A', kind: 'general', list_id: null, owner: 'mike', members: ['louise', 'esme', 'oscar'] },
+    { id: uid(), title: 'Departure', target: at(103, 6), colour: '#FF9500', kind: 'departure', list_id: 'l-pack', owner: 'louise', members: [], style: 'station' },
+    { id: uid(), title: 'Christmas Day', target: new Date(new Date().getFullYear(), 11, 25).toISOString(), colour: '#E0352B', kind: 'general', list_id: 'l-xmas', owner: 'mike', members: [], style: 'flip' },
+    { id: uid(), title: 'Oscar’s birthday', target: at(41), colour: '#30B05A', kind: 'general', list_id: null, owner: 'mike', members: ['louise', 'esme', 'oscar'], style: 'scoreboard' },
   ];
   return { members: FAMILY, lists, list_access: access, items, meal_slots, meal_presence, notifications, gift_status, countdowns, ...seedBudget() };
 }
@@ -653,31 +654,75 @@ function homeView() {
   const usedTypes = TYPE_ORDER.filter((t) => S.data.lists.some((l) => l.type === t));
   const chip = (k, label, c) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-a="filter" data-k="${k}">${c ? `<span class="dot" style="--c:${c}"></span>` : ''}${label}</button>`;
 
-  let body = '';
-  if (!S.data.lists.length) {
-    body = `<div class="empty"><div class="big">No lists yet</div>Make a shopping list, a meal plan or a notice board, then choose who in the family can see it.<br><br><button class="btn" data-a="newList">${icon('plus', 20, 2.4)} New list</button></div>`;
-  } else {
-    for (const t of TYPE_ORDER) {
-      const ls = lists.filter((l) => l.type === t);
-      if (!ls.length) continue;
-      body += `<div class="section-label">${TYPES[t].name}</div><div class="group" style="--indent:64px">${ls.map(listRow).join('')}</div>`;
-    }
-    if (!body) body = '<div class="empty">No lists match that filter.</div>';
-  }
-
-  return `
-  <div class="nav"><span class="eyebrow">${fmtDay(new Date())}</span><div class="actions"><button class="icon-btn solid" data-a="newList" aria-label="New list">${icon('plus', 20, 2.4)}</button></div></div>
-  <h1 class="large">${greet()}, ${esc(me?.name || '')}</h1>
-  <div class="tiles">
+  const lay = homeLayout();
+  const tiles = `<div class="tiles">
     <button class="tile" data-a="go" data-h="#/mine"><div class="top"><span class="tile-icon sm" style="--c:#0A84FF">${icon('person', 18)}</span><span class="num">${mine.length}</span></div><div class="lbl">My tasks${dueToday ? ` · ${dueToday} due` : ''}</div></button>
     <button class="tile" ${mealList ? `data-a="go" data-h="#/list/${mealList.id}"` : 'data-a="newList" data-type="meals"'}><div class="top"><span class="tile-icon sm" style="--c:${TYPES.meals.colour}">${icon('meal', 18)}</span><span class="val">${tonight}</span></div><div class="lbl">Dinner tonight${home ? ' · ' + home : ''}</div></button>
     <button class="tile" ${shopping[0] ? `data-a="go" data-h="#/list/${shopping[0].id}"` : 'data-a="newList" data-type="shopping"'}><div class="top"><span class="tile-icon sm" style="--c:${TYPES.shopping.colour}">${icon('cart', 18)}</span><span class="num">${toGet}</span></div><div class="lbl">To buy</div></button>
     <button class="tile" data-a="noticeTile"><div class="top"><span class="tile-icon sm" style="--c:${TYPES.notice.colour}">${icon('pin', 18)}</span><span class="num">${unseen}</span></div><div class="lbl">New notices</div></button>
-  </div>
-  ${canBudget() ? budgetTile() : ''}
-  ${homeCountdowns()}
-  <div class="chips" style="margin-top:14px">${chip('all', 'All')}${chip('shared', 'Shared')}${chip('mine', 'Just me')}${usedTypes.map((t) => chip(t, TYPES[t].name, TYPES[t].colour)).join('')}</div>
-  ${body}`;
+  </div>`;
+  const chips = `<div class="chips" style="margin-top:14px">${chip('all', 'All')}${chip('shared', 'Shared')}${chip('mine', 'Just me')}${usedTypes.map((t) => chip(t, TYPES[t].name, TYPES[t].colour)).join('')}</div>`;
+  let out = '', chipsDone = false, listShown = 0;
+  for (const id of lay.order) {
+    const hidden = lay.hidden.includes(id);
+    if (id === 'tiles') { if (!hidden) out += tiles; continue; }
+    if (id === 'budget') { if (!hidden && canBudget()) out += budgetTile(); continue; }
+    if (id === 'countdowns') { if (!hidden) out += homeCountdowns(); continue; }
+    if (!TYPES[id] || !S.data.lists.length) continue;
+    if (hidden && S.filter !== id) continue;
+    if (!chipsDone) { out += chips; chipsDone = true; }
+    const ls = lists.filter((l) => l.type === id);
+    if (!ls.length) continue;
+    listShown++;
+    out += `<div class="section-label">${TYPES[id].name}</div><div class="group" style="--indent:64px">${ls.map(listRow).join('')}</div>`;
+  }
+  if (!S.data.lists.length) out += `<div class="empty"><div class="big">No lists yet</div>Make a shopping list, a meal plan or a notice board, then choose who in the family can see it.<br><br><button class="btn" data-a="newList">${icon('plus', 20, 2.4)} New list</button></div>`;
+  else if (!chipsDone) out += chips + '<p class="hint">All list sections are hidden. Pick a type above, or edit the home screen.</p>';
+  else if (!listShown) out += '<div class="empty">No lists match that filter.</div>';
+
+  return `
+  <div class="nav"><span class="eyebrow">${fmtDay(new Date())}</span><div class="actions"><button class="icon-btn solid" data-a="newList" aria-label="New list">${icon('plus', 20, 2.4)}</button></div></div>
+  <h1 class="large">${greet()}, ${esc(me?.name || '')}</h1>
+  ${out}
+  <button class="link-btn home-edit" data-a="editHome">${icon('grip', 16, 2.4)} Edit home screen</button>`;
+}
+
+/* ---------- Home layout (saved on this iPhone) ---------- */
+function homeBlocks() {
+  return [
+    { id: 'tiles', name: 'Quick view', desc: 'My tasks, dinner, shopping, notices', ic: 'house', c: '#0A84FF' },
+    { id: 'budget', name: 'Budget', desc: 'Only you and Louise see this', ic: 'brief', c: '#248A3D', show: canBudget() },
+    { id: 'countdowns', name: 'Countdowns', ic: 'cal', c: '#5E5CE6', show: !missing('countdowns') },
+    ...TYPE_ORDER.map((t) => ({ id: t, name: TYPES[t].name, desc: `${S.data.lists.filter((l) => l.type === t).length} list${S.data.lists.filter((l) => l.type === t).length === 1 ? '' : 's'}`, ic: TYPES[t].icon, c: TYPES[t].colour })),
+  ];
+}
+function homeLayout() {
+  let o = null;
+  try { o = JSON.parse(pref('home', 'null')); } catch { o = null; }
+  o = o || {};
+  const ids = homeBlocks().map((b) => b.id);
+  const order = (o.order || []).filter((id) => ids.includes(id));
+  ids.forEach((id) => { if (!order.includes(id)) order.splice(id === 'tiles' ? 0 : order.length, 0, id); });
+  return { order, hidden: (o.hidden || []).filter((id) => ids.includes(id)) };
+}
+function saveHomeLayout(lay) { setPref('home', JSON.stringify(lay)); render(); renderSheets(true); }
+function saveHomeOrder(visibleIds) {
+  const lay = homeLayout();
+  lay.order = [...visibleIds, ...lay.order.filter((id) => !visibleIds.includes(id))];
+  saveHomeLayout(lay);
+}
+function homeEditSheet() {
+  const lay = homeLayout();
+  const blocks = homeBlocks().filter((b) => b.show !== false);
+  const byId = Object.fromEntries(blocks.map((b) => [b.id, b]));
+  const rows = lay.order.filter((id) => byId[id]).map((id) => {
+    const b = byId[id], on = !lay.hidden.includes(id);
+    return `<div class="row home-row ${on ? '' : 'off'}" data-iid="${id}" style="--indent:58px"><span class="grip-ic">${icon('grip', 18, 2.4)}</span><span class="tile-icon sm" style="--c:${b.c}">${icon(b.ic, 16)}</span><div class="row-main" style="cursor:grab"><div class="row-title">${esc(b.name)}</div>${b.desc ? `<div class="row-sub">${esc(b.desc)}</div>` : ''}</div><span class="switch ${on ? 'on' : ''}" data-a="homeToggle" data-id="${id}" role="switch" aria-checked="${on}"></span></div>`;
+  }).join('');
+  return head('Home screen', '<button class="txt" data-a="homeReset">Reset</button>') + `
+    <p class="hint" style="margin:0 4px 12px">Press and hold a row to move it. Switch off anything you don’t use. This only changes your iPhone, so everyone can set it up their own way.</p>
+    <div class="group" data-reorder="home">${rows}</div>
+    <p class="hint">Hidden list types are still there — tap their filter on the home screen to see them.</p>`;
 }
 
 /* ---------- My tasks ---------- */
@@ -752,7 +797,8 @@ function familyView() {
         <input type="file" id="bg-file" accept="image/*" hidden data-change="bgFile">
       </div>
     </div>
-    <p class="hint">Appearance is saved on this iPhone, so each of you can choose your own.</p>
+    <div class="group" style="margin-top:10px"><div class="row tap" data-a="editHome"><span class="tile-icon sm" style="--c:#5E5CE6">${icon('grip', 18, 2.4)}</span><div class="row-main"><div class="row-title">Home screen layout</div><div class="row-sub">Reorder or hide sections</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div></div>
+    <p class="hint">Appearance and layout are saved on this iPhone, so each of you can choose your own.</p>
     <div class="section-label">The McGaws</div><div class="group">${fam}</div>
     <div class="stack-gap" style="margin-top:22px">
       ${DEMO ? '<button class="btn secondary" data-a="resetDemo">Reset demo data</button>' : ''}
@@ -1014,6 +1060,7 @@ function sheetHtml(s) {
     case 'import': return importSheet(s);
     case 'todo': return todoSheet(s);
     case 'countdown': return countdownSheet(s);
+    case 'homeEdit': return homeEditSheet();
     case 'bEntry': return budgetEntrySheet(s);
     case 'bPot': return budgetPotSheet(s);
     case 'bAccounts': return budgetAccountsSheet(s);
@@ -1973,7 +2020,7 @@ async function setGift(it, patch) {
 const DRAG = { timer: null, start: null, row: null, group: null, active: false, lastY: 0, until: 0, raf: 0, pending: false, before: '', lastTouch: 0 };
 function dragRowFrom(t) {
   if (!t || !t.closest) return null;
-  if (t.closest('.check, .seen-btn, input, textarea, select, a, .wish')) return null;
+  if (t.closest('.check, .seen-btn, input, textarea, select, a, .wish, .switch')) return null;
   const row = t.closest('[data-iid]');
   if (!row || !row.parentElement || !row.parentElement.hasAttribute('data-reorder')) return null;
   return row;
@@ -2027,7 +2074,10 @@ function pressEnd() {
   DRAG.row.classList.remove('lifted');
   document.body.classList.remove('dragging');
   const ids = [...DRAG.group.querySelectorAll(':scope > [data-iid]')].map((e) => e.dataset.iid);
-  if (ids.join() !== DRAG.before) savePositions(ids, DRAG.group.dataset.order === 'desc');
+  if (ids.join() !== DRAG.before) {
+    if (DRAG.group.dataset.reorder === 'home') saveHomeOrder(ids);
+    else savePositions(ids, DRAG.group.dataset.order === 'desc');
+  }
   const pending = DRAG.pending;
   DRAG.pending = false; DRAG.row = null; DRAG.group = null;
   if (pending) { render(); renderSheets(true); }
@@ -2060,25 +2110,56 @@ document.addEventListener('contextmenu', (e) => { if (e.target.closest && e.targ
    ============================================================ */
 const FULL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const CD_STYLES = [
+  { id: 'standard', name: 'Standard' },
+  { id: 'flip', name: 'Flip clock' },
+  { id: 'station', name: 'Train station' },
+  { id: 'futuristic', name: 'Futuristic' },
+  { id: 'scoreboard', name: 'Scoreboard' },
+  { id: 'onair', name: 'On Air' },
+  { id: 'neon', name: 'Neon' },
+  { id: 'calendar', name: 'Tear-off calendar' },
+];
+const CD_HEAD = { station: 'Departs in', scoreboard: 'Kick-off in', onair: 'Going live in', futuristic: 'T-minus' };
+const CD_SEP = { station: ':', futuristic: ':', onair: ':', flip: '' };
+const pad2 = (n) => String(n).padStart(2, '0');
+const cdStyleOf = (id) => (CD_STYLES.some((x) => x.id === id) ? id : 'standard');
 function cdParts(target) {
   const t = new Date(target), now = new Date();
   const ms = t - now, past = ms < 0, abs = Math.abs(ms);
-  const days = Math.floor(abs / 864e5), hrs = Math.floor((abs % 864e5) / 36e5), mins = Math.floor((abs % 36e5) / 6e4);
+  const days = Math.floor(abs / 864e5), hrs = Math.floor((abs % 864e5) / 36e5), mins = Math.floor((abs % 36e5) / 6e4), secs = Math.floor((abs % 6e4) / 1e3);
   let a = past ? t : now, b = past ? now : t;
   let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
   const plus = (n) => { const x = new Date(a); x.setMonth(x.getMonth() + n); return x; };
   if (plus(months) > b) months--;
   const remDays = Math.floor((b - plus(Math.max(0, months))) / 864e5);
   const sameDay = ymd(t) === ymd(now);
-  return { past, days, hrs, mins, months: Math.max(0, months), remDays, sameDay };
+  return { past, days, hrs, mins, secs, months: Math.max(0, months), remDays, sameDay };
 }
-function cdInner(target, v) {
+const monthLineOf = (p) => (p.months ? `${plural(p.months, 'month')}${p.remDays ? ', ' + plural(p.remDays, 'day') : ''}` : '');
+function cdInner(target, v, style = 'standard') {
   const p = cdParts(target);
+  style = cdStyleOf(style);
+  const themed = style !== 'standard' && v !== 'chip';
   if (p.past) {
     const ago = p.sameDay ? 'Today!' : `${plural(p.days, 'day')} ago`;
+    if (themed) return `<div class="cd-face ${v === 'small' ? 'sm ' : ''}t-${style} done"><div class="face-done">🎉 ${ago}</div></div>`;
     return v === 'big' ? `<div class="cd-num">🎉</div><div class="cd-hm">${ago}</div>` : `<span class="cd-small-num">${p.sameDay ? '🎉' : ago}</span>`;
   }
-  const monthLine = p.months ? `${plural(p.months, 'month')}${p.remDays ? ', ' + plural(p.remDays, 'day') : ''}` : '';
+  const monthLine = monthLineOf(p);
+  if (themed && v === 'small') {
+    return `<div class="cd-face sm t-${style}"><b data-u="d">${p.days}</b><i>${p.days === 1 ? 'day' : 'days'}</i><span class="sm-hm"><span data-u="h">${pad2(p.hrs)}</span>:<span data-u="m">${pad2(p.mins)}</span>:<span data-u="s">${pad2(p.secs)}</span></span></div>`;
+  }
+  if (themed && style === 'calendar') {
+    return `<div class="cd-face t-calendar"><div class="cal-rings"><i></i><i></i><i></i><i></i></div><div class="cal-head">${p.days === 1 ? 'Day' : 'Days'} to go</div><div class="cal-num" data-u="d">${p.days}</div><div class="cal-sub"><span data-u="h">${p.hrs}</span> hrs <span data-u="m">${pad2(p.mins)}</span> mins <span data-u="s">${pad2(p.secs)}</span> secs</div>${monthLine ? `<div class="cal-mo" data-u="mo">${monthLine}</div>` : ''}</div>`;
+  }
+  if (themed) {
+    const units = [['d', p.days, 'days'], ['h', pad2(p.hrs), 'hrs'], ['m', pad2(p.mins), 'mins'], ['s', pad2(p.secs), 'secs']];
+    const sep = CD_SEP[style] ? `<span class="sep">${CD_SEP[style]}</span>` : '';
+    return `<div class="cd-face t-${style}">${CD_HEAD[style] ? `<div class="face-head">${style === 'onair' ? '<span class="lamp">ON AIR</span>' : ''}${CD_HEAD[style]}</div>` : ''}
+      <div class="units">${units.map(([k, val, lbl]) => `<div class="u"><b data-u="${k}">${val}</b><i>${lbl}</i></div>`).join(sep)}</div>
+      ${monthLine ? `<div class="face-mo" data-u="mo">${monthLine}</div>` : ''}</div>`;
+  }
   if (v === 'big') {
     const lead = p.days ? `<div class="cd-num">${p.days.toLocaleString('en-GB')}</div><div class="cd-unit">${p.days === 1 ? 'day' : 'days'}</div><div class="cd-hm">${plural(p.hrs, 'hr')} ${plural(p.mins, 'min')}</div>`
       : `<div class="cd-num">${p.hrs}</div><div class="cd-unit">${p.hrs === 1 ? 'hour' : 'hours'}</div><div class="cd-hm">${plural(p.mins, 'min')}</div>`;
@@ -2090,9 +2171,25 @@ function cdInner(target, v) {
   }
   return p.days ? `${plural(p.days, 'day')} ${plural(p.hrs, 'hr')}` : `${plural(p.hrs, 'hr')} ${plural(p.mins, 'min')}`;
 }
-const cdBox = (c, v) => `<span class="cd-live" data-cd="${esc(c.target)}" data-v="${v}">${cdInner(c.target, v)}</span>`;
-function tickCountdowns() { document.querySelectorAll('[data-cd]').forEach((el) => { el.innerHTML = cdInner(el.dataset.cd, el.dataset.v); }); }
-setInterval(tickCountdowns, 20000);
+const cdBox = (c, v) => `<span class="cd-live" data-cd="${esc(c.target)}" data-v="${v}" data-st="${cdStyleOf(c.style)}">${cdInner(c.target, v, c.style)}</span>`;
+function tickCountdowns() {
+  document.querySelectorAll('[data-cd]').forEach((el) => {
+    const st = el.dataset.st || 'standard', v = el.dataset.v;
+    const p = cdParts(el.dataset.cd);
+    const units = el.querySelectorAll('[data-u]');
+    if (st === 'standard' || v === 'chip' || p.past || !units.length) {
+      const html = cdInner(el.dataset.cd, v, st);
+      if (el._h !== html) { el.innerHTML = html; el._h = html; }
+      return;
+    }
+    const vals = { d: p.days, h: st === 'calendar' ? p.hrs : pad2(p.hrs), m: pad2(p.mins), s: pad2(p.secs), mo: monthLineOf(p) };
+    units.forEach((u) => {
+      const nv = String(vals[u.dataset.u]);
+      if (u.textContent !== nv) { u.textContent = nv; if (u.dataset.u !== 'mo') { u.classList.remove('tick'); void u.offsetWidth; u.classList.add('tick'); } }
+    });
+  });
+}
+setInterval(tickCountdowns, 1000);
 const cdColour = (c) => c.colour || (c.list_id && getList(c.list_id) ? listColour(getList(c.list_id)) : '#5E5CE6');
 function fmtWhen(target) {
   const d = new Date(target);
@@ -2105,7 +2202,7 @@ const upcoming = (c) => new Date(c.target) > Date.now() - 864e5;
 function homeCountdowns() {
   if (missing('countdowns')) return '';
   const cds = cdSorted(S.data.countdowns.filter(upcoming)).slice(0, 8);
-  const cards = cds.map((c) => `<button class="cd-mini" style="--c:${cdColour(c)}" data-a="editCd" data-id="${c.id}"><span class="cd-mini-title">${esc(c.title)}</span>${cdBox(c, 'small')}</button>`).join('');
+  const cards = cds.map((c) => `<button class="cd-mini ${cdStyleOf(c.style) !== 'standard' ? 'themed' : ''}" style="--c:${cdColour(c)}" data-a="editCd" data-id="${c.id}"><span class="cd-mini-title">${esc(c.title)}</span>${cdBox(c, 'small')}</button>`).join('');
   return `<div class="section-label"><span>Countdowns</span><button data-a="go" data-h="#/countdowns">See all</button></div>
     <div class="cd-strip">${cards}<button class="cd-mini add" data-a="newCd">${icon('plus', 22, 2.4)}<span class="cd-mini-title">New</span></button></div>`;
 }
@@ -2146,13 +2243,16 @@ function countdownSheet(s) {
   const others = membersSorted().filter((m) => m.id !== (c ? c.owner : S.me));
   const ok = d.title.trim() && d.date;
   return head(c ? 'Countdown' : 'New countdown', c && canDel ? '<button class="txt danger" data-a="deleteCd">Delete</button>' : undefined, `<button class="txt r" data-a="saveCd" ${ok ? '' : 'disabled style="opacity:.4"'}>${c ? 'Save' : 'Add'}</button>`) + `
-    <input class="big-input" id="cd-title" value="${esc(d.title)}" placeholder="What are you counting down to?" data-input="cdField" data-f="title" autocomplete="off" style="margin-top:6px">
+    <div class="section-label" style="margin-top:4px">Name</div>
+    <input class="big-input" id="cd-title" value="${esc(d.title)}" placeholder="e.g. Lapland trip, Esme’s birthday" data-input="cdField" data-f="title" autocomplete="off">
     <div class="group" style="margin-top:12px">
       <div class="field"><label>Date</label><input type="date" value="${d.date}" data-input="cdField" data-f="date"></div>
       <div class="field"><label>Time</label><input type="time" value="${d.time}" data-input="cdField" data-f="time"></div>
       <div class="field"><label>Link to a list</label><select data-change="cdList"><option value="">No list</option>${S.data.lists.map((x) => `<option value="${x.id}" ${d.list_id === x.id ? 'selected' : ''}>${esc(x.title)}</option>`).join('')}</select></div>
     </div>
-    ${d.date ? `<div class="cd-preview" style="--c:${d.colour || (l ? listColour(l) : '#5E5CE6')}">${cdInner(new Date(`${d.date}T${d.time || '00:00'}`).toISOString(), 'big')}</div>` : ''}
+    ${d.date ? `<div class="cd-preview" style="--c:${d.colour || (l ? listColour(l) : '#5E5CE6')}"><span class="cd-live" data-cd="${new Date(`${d.date}T${d.time || '00:00'}`).toISOString()}" data-v="big" data-st="${cdStyleOf(d.style)}">${cdInner(new Date(`${d.date}T${d.time || '00:00'}`).toISOString(), 'big', d.style)}</span></div>` : ''}
+    <div class="section-label">Style</div>
+    <div class="style-grid">${CD_STYLES.map((st) => `<button class="style-tile ${cdStyleOf(d.style) === st.id ? 'on' : ''}" data-a="cdStyle" data-v="${st.id}"><span class="style-sample" style="--c:${d.colour || (l ? listColour(l) : '#5E5CE6')}"><div class="cd-face sm t-${st.id}"><b>12</b><i>days</i><span class="sm-hm">${st.id === 'standard' ? '4h 20m' : '04:20:09'}</span></div></span><span class="style-name">${st.name}</span></button>`).join('')}</div>
     <div class="section-label">Colour</div>${swatchHtml(d.colour, 'data-a="cdColour"')}
     <div class="section-label">Who can see it</div>
     ${l ? `<p class="hint" style="margin:0 4px 8px">Everyone on “${esc(l.title)}” can see it. Add anyone else below.</p>` : ''}
@@ -2164,21 +2264,22 @@ Object.assign(A, {
     const listId = el.dataset?.list || null, kind = el.dataset?.kind || 'general';
     if (topSheet()?.kind === 'listMenu') S.sheets.pop();
     const d = new Date(); d.setDate(d.getDate() + 7);
-    openSheet({ kind: 'countdown', focus: 'cd-title', draft: { title: kind === 'departure' ? 'Departure' : '', date: kind === 'departure' ? '' : ymd(d), time: kind === 'departure' ? '09:00' : '', colour: null, list_id: listId, members: [], kind } });
+    openSheet({ kind: 'countdown', focus: 'cd-title', draft: { title: kind === 'departure' ? 'Departure' : '', date: kind === 'departure' ? '' : ymd(d), time: kind === 'departure' ? '09:00' : '', colour: null, list_id: listId, members: [], kind, style: kind === 'departure' ? 'station' : 'flip' } });
   },
   editCd: (el) => {
     const c = S.data.countdowns.find((x) => x.id === el.dataset.id);
     if (!c) return;
     const t = new Date(c.target);
     const time = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-    openSheet({ kind: 'countdown', id: c.id, draft: { title: c.title, date: ymd(t), time: time === '00:00' ? '' : time, colour: c.colour, list_id: c.list_id, members: [...(c.members || [])], kind: c.kind } });
+    openSheet({ kind: 'countdown', id: c.id, draft: { title: c.title, date: ymd(t), time: time === '00:00' ? '' : time, colour: c.colour, list_id: c.list_id, members: [...(c.members || [])], kind: c.kind, style: cdStyleOf(c.style) } });
   },
+  cdStyle: (el) => { topSheet().draft.style = el.dataset.v; renderSheets(true); },
   cdColour: (el) => { const d = topSheet().draft; d.colour = d.colour === el.dataset.c ? null : el.dataset.c; renderSheets(true); },
   cdMember: (el) => { const d = topSheet().draft, m = el.dataset.m; d.members = d.members.includes(m) ? d.members.filter((x) => x !== m) : [...d.members, m]; renderSheets(true); },
   saveCd: async () => {
     const s = topSheet(), d = s.draft;
     if (!d.title.trim() || !d.date) return;
-    const row = { title: d.title.trim(), target: new Date(`${d.date}T${d.time || '00:00'}`).toISOString(), colour: d.colour, list_id: d.list_id || null, members: d.members, kind: d.kind || 'general' };
+    const row = { title: d.title.trim(), target: new Date(`${d.date}T${d.time || '00:00'}`).toISOString(), colour: d.colour, list_id: d.list_id || null, members: d.members, kind: d.kind || 'general', style: cdStyleOf(d.style) };
     S.sheets.pop();
     if (s.id) await upd('countdowns', { id: s.id }, row);
     else await ins('countdowns', { id: uid(), owner: S.me, created_at: new Date().toISOString(), ...row });
@@ -2199,7 +2300,7 @@ Object.assign(INPUT, {
     const b = $('[data-a="saveCd"]'); const ok = d.title.trim() && d.date;
     if (b) { b.disabled = !ok; b.style.opacity = ok ? 1 : 0.4; }
     const pv = document.querySelector('.cd-preview');
-    if (pv && d.date) pv.innerHTML = cdInner(new Date(`${d.date}T${d.time || '00:00'}`).toISOString(), 'big');
+    if (pv && d.date) { const iso = new Date(`${d.date}T${d.time || '00:00'}`).toISOString(); pv.innerHTML = `<span class="cd-live" data-cd="${iso}" data-v="big" data-st="${cdStyleOf(d.style)}">${cdInner(iso, 'big', d.style)}</span>`; }
     else if (!pv && d.date && el.dataset.f !== 'title') renderSheets(true);
   },
 });
@@ -2533,6 +2634,12 @@ function seedBudget() {
   }));
   return { budget_accounts: accounts, budget_pots: pots, budget_entries: entries };
 }
+
+Object.assign(A, {
+  editHome: () => openSheet({ kind: 'homeEdit' }),
+  homeToggle: (el) => { const lay = homeLayout(), id = el.dataset.id; lay.hidden = lay.hidden.includes(id) ? lay.hidden.filter((x) => x !== id) : [...lay.hidden, id]; saveHomeLayout(lay); },
+  homeReset: async () => { if (!await ask('Put the home screen back to how it started?', 'Reset')) return; setPref('home', null); render(); renderSheets(true); },
+});
 
 document.addEventListener('click', (e) => {
   if (Date.now() < DRAG.until) { e.preventDefault(); e.stopPropagation(); return; }

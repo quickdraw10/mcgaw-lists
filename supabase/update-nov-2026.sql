@@ -94,6 +94,7 @@ create table if not exists countdowns (
   members    text[] not null default '{}',
   created_at timestamptz not null default now()
 );
+alter table countdowns add column if not exists style text not null default 'standard';
 create index if not exists countdowns_list on countdowns(list_id);
 
 alter table countdowns enable row level security;
