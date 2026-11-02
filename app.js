@@ -2051,7 +2051,7 @@ function liftRow() {
     const top = sc ? sc.getBoundingClientRect().top : 0;
     const bottom = sc ? sc.getBoundingClientRect().bottom : innerHeight;
     const v = DRAG.lastY < top + 80 ? -9 : DRAG.lastY > bottom - 80 ? 9 : 0;
-    if (v) { if (sc) sc.scrollTop += v; else window.scrollBy(0, v); placeRow(DRAG.lastY); }
+    if (v) { (sc || $('#view')).scrollTop += v; placeRow(DRAG.lastY); }
     DRAG.raf = requestAnimationFrame(step);
   };
   DRAG.raf = requestAnimationFrame(step);
@@ -2575,7 +2575,7 @@ const ACC_COLOURS = ['#0A84FF', '#FF375F', '#5E5CE6', '#30B05A', '#FF9500', '#00
 function bDraftFrom(e) { return { ...e, amount: e.amount != null ? String(n2(e.amount)) : '', day: e.day || '', applyLater: true }; }
 Object.assign(A, {
   bMonth: (el) => { S.ui.bMonth = addMonths(bMonth(), +el.dataset.d); render(); },
-  bGoMonth: (el) => { S.ui.bMonth = el.dataset.m; render(); window.scrollTo(0, 0); },
+  bGoMonth: (el) => { S.ui.bMonth = el.dataset.m; render(); $('#view').scrollTop = 0; },
   bAcc: (el) => { S.ui.bAcc = el.dataset.v || null; render(); },
   bQuickAcc: (el) => ins('budget_accounts', { id: uid(), name: el.dataset.n, colour: ACC_COLOURS[bAccounts().length % ACC_COLOURS.length], sort: Date.now() / 1000, created_at: new Date().toISOString() }),
   bAccounts: () => openSheet({ kind: 'bAccounts' }),
@@ -2873,7 +2873,7 @@ async function start() {
   }
 }
 
-window.addEventListener('hashchange', () => { S.sheets = []; render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { S.sheets = []; render(); $('#view').scrollTop = 0; });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me) { reload(); loadTodo(true); } });
 (() => {
   const q = new URLSearchParams(location.search).get('todo');

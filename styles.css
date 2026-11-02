@@ -616,3 +616,14 @@ body.dragging .group[data-reorder] { overflow: visible; }
 .br-due .flaps i { font-size: 12px; }
 @media (max-width: 370px) { .flaps i { font-size: 12px; } .br-due .flaps i { font-size: 10px; } }
 .b-train .board-cols, .b-train .board-row { grid-template-columns: 76px 1fr auto; column-gap: 10px; }
+
+/* Fixed app shell: only the content scrolls, so the tab bar never moves */
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+#view {
+  position: fixed; inset: 0; z-index: 1;
+  max-width: none; margin: 0;
+  overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
+  padding: calc(var(--safe-t) + 8px) max(16px, calc((100% - 648px) / 2)) calc(var(--safe-b) + 100px);
+}
+#view.no-tabs { padding-bottom: calc(var(--safe-b) + 40px); }
+.login { min-height: 100%; }
