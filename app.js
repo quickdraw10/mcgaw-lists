@@ -583,6 +583,7 @@ function render() {
   app.classList.toggle('no-tabs', ['list', 'countdowns', 'budget'].includes(r.name));
   if (keep) { const el = document.getElementById(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.s, keep.s); } catch { /* */ } } }
   inkPass(app);
+  spinFlaps(app);
   renderTabs(r);
   renderSheets();
 }
@@ -788,6 +789,7 @@ function familyView() {
     <div class="section-label">Appearance</div>
     <div class="group">
       <div class="field"><label>Mode</label><div class="seg" style="flex:1">${[['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([k, v]) => `<button class="${pref('mode', 'system') === k ? 'on' : ''}" data-a="setMode" data-v="${k}">${v}</button>`).join('')}</div></div>
+      <div class="field col"><label>Countdowns show as</label>${boardSeg()}</div>
       <div class="field col"><label>Theme</label><div class="themes">${Object.entries(THEMES).map(([k, t]) => `<button class="theme-dot ${pref('theme', 'classic') === k ? 'on' : ''}" data-a="setTheme" data-v="${k}" style="--a:${t.accent};--b:${t.bgL}"><span></span>${t.name}</button>`).join('')}</div></div>
       <div class="field col"><label>Background photo</label>
         ${pref('bg', null) ? `<div class="bg-preview" style="background-image:url('${pref('bg', '')}')"></div>
@@ -2199,8 +2201,93 @@ function fmtWhen(target) {
 const cdSorted = (list) => [...list].sort((a, b) => new Date(a.target) - new Date(b.target));
 const upcoming = (c) => new Date(c.target) > Date.now() - 864e5;
 
+/* ---------- Departure boards (personal setting) ---------- */
+const BOARD_MODES = [['cards', 'Cards'], ['train', 'Train station'], ['airport', 'Airport']];
+const boardMode = () => { const m = pref('cdBoard', 'cards'); return ['train', 'airport'].includes(m) ? m : 'cards'; };
+function boardDue(target, kind) {
+  const p = cdParts(target);
+  if (p.past) return kind === 'airport' ? 'GONE' : '—';
+  if (kind === 'airport') return p.days ? `${p.days}D ${pad2(p.hrs)}:${pad2(p.mins)}` : `${pad2(p.hrs)}:${pad2(p.mins)}:${pad2(p.secs)}`;
+  return `${p.days ? p.days + 'd ' : ''}${pad2(p.hrs)}:${pad2(p.mins)}:${pad2(p.secs)}`;
+}
+function boardStatus(target, kind) {
+  const h = (new Date(target) - Date.now()) / 36e5;
+  if (h < 0) return kind === 'airport' ? ['Departed', 'gone'] : ['Departed', 'gone'];
+  if (kind === 'airport') return h <= 2 ? ['Final call', 'red'] : h <= 24 ? ['Boarding', 'green'] : h <= 168 ? ['Check-in open', 'yellow'] : ['Scheduled', ''];
+  return h <= 1 ? ['Departing', 'red'] : h <= 24 ? ['Due', 'green'] : ['On time', 'green'];
+}
+const flaps = (txt, n) => `<span class="flaps" data-flaps="${esc(txt)}">${[...String(txt).toUpperCase().padEnd(n || 0).slice(0, n || 99)].map((ch) => `<i>${ch === ' ' ? '&nbsp;' : esc(ch)}</i>`).join('')}</span>`;
+const clockNow = () => { const d = new Date(); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+function cdBoardHtml(list, kind, opts = {}) {
+  const rows = list.map((c) => {
+    const l = c.list_id && getList(c.list_id);
+    const d = new Date(c.target);
+    const date = `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+    const [st, cls] = boardStatus(c.target, kind);
+    const gone = new Date(c.target) < Date.now();
+    if (kind === 'airport') {
+      return `<div class="board-row ${gone ? 'gone' : ''}" data-a="editCd" data-id="${c.id}">
+        <span class="br-dest">${flaps(c.title.length > 17 ? c.title.slice(0, 16) + '…' : c.title, 17)}</span>
+        <span class="br-date">${esc(date)}</span>
+        <span class="br-due" data-bd="${esc(c.target)}" data-k="airport">${flaps(boardDue(c.target, 'airport'))}</span>
+        <span class="br-st st-${cls}" data-bs="${esc(c.target)}" data-k="airport">${st}</span></div>`;
+    }
+    return `<div class="board-row ${gone ? 'gone' : ''}" data-a="editCd" data-id="${c.id}">
+      <span class="br-date">${esc(date)}</span>
+      <span class="br-dest">${esc(c.title)}</span>
+      <span class="br-sub">${l ? `Plat. ${esc(l.title)} · ` : ''}<b class="st-${cls}" data-bs="${esc(c.target)}" data-k="train">${st}</b></span>
+      <span class="br-due" data-bd="${esc(c.target)}" data-k="train">${boardDue(c.target, 'train')}</span></div>`;
+  }).join('');
+  const empty = `<div class="board-empty">${kind === 'airport' ? 'No flights scheduled' : 'No departures'}</div>`;
+  return `<div class="board b-${kind}">
+    <div class="board-head"><span>${kind === 'airport' ? '✈ Departures' : 'Departures'}</span><span class="board-clock" data-clock>${clockNow()}</span></div>
+    ${kind === 'train' ? '<div class="board-cols"><span>Date</span><span>Destination</span><span>Due in</span></div>' : ''}
+    ${rows || empty}
+    ${opts.more ? `<div class="board-foot">${opts.more}</div>` : ''}</div>`;
+}
+const SPUN = new Set();
+function spinFlaps(root) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  root.querySelectorAll('.b-airport .br-dest .flaps').forEach((f) => {
+    const key = f.dataset.flaps;
+    if (SPUN.has(key)) return;
+    SPUN.add(key);
+    const tiles = [...f.children];
+    const finals = tiles.map((t) => t.innerHTML);
+    const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let n = 0;
+    const timer = setInterval(() => {
+      n++;
+      tiles.forEach((t, i) => {
+        if (n >= 4 + i) t.innerHTML = finals[i];
+        else { t.textContent = ABC[Math.floor(Math.random() * ABC.length)]; t.classList.remove('flip'); void t.offsetWidth; t.classList.add('flip'); }
+      });
+      if (n >= 4 + tiles.length) clearInterval(timer);
+    }, 55);
+  });
+}
+function tickBoards() {
+  document.querySelectorAll('[data-clock]').forEach((el) => { const v = clockNow(); if (el.textContent !== v) el.textContent = v; });
+  document.querySelectorAll('[data-bd]').forEach((el) => {
+    const v = boardDue(el.dataset.bd, el.dataset.k);
+    if (el.dataset.k === 'train') { if (el.textContent !== v) el.textContent = v; return; }
+    const f = el.querySelector('.flaps'); if (!f) return;
+    const chars = [...v.toUpperCase()];
+    if (f.children.length !== chars.length) { el.innerHTML = flaps(v); return; }
+    chars.forEach((ch, i) => { const t = f.children[i], nv = ch === ' ' ? ' ' : ch; if (t.textContent !== nv) { t.textContent = nv; t.classList.remove('flip'); void t.offsetWidth; t.classList.add('flip'); } });
+  });
+  document.querySelectorAll('[data-bs]').forEach((el) => { const [st, cls] = boardStatus(el.dataset.bs, el.dataset.k); if (el.textContent !== st) { el.textContent = st; el.className = (el.classList.contains('br-st') ? 'br-st ' : '') + 'st-' + cls; } });
+}
+setInterval(tickBoards, 1000);
+const boardSeg = () => `<div class="seg board-seg">${BOARD_MODES.map(([k, v]) => `<button class="${boardMode() === k ? 'on' : ''}" data-a="setBoard" data-v="${k}">${v}</button>`).join('')}</div>`;
+
 function homeCountdowns() {
   if (missing('countdowns')) return '';
+  if (boardMode() !== 'cards') {
+    const cds = cdSorted(S.data.countdowns.filter(upcoming)).slice(0, 5);
+    return `<div class="section-label"><span>Countdowns</span><button data-a="go" data-h="#/countdowns">See all</button></div>
+      ${cdBoardHtml(cds, boardMode(), { more: `<button data-a="newCd">+ New countdown</button>` })}`;
+  }
   const cds = cdSorted(S.data.countdowns.filter(upcoming)).slice(0, 8);
   const cards = cds.map((c) => `<button class="cd-mini ${cdStyleOf(c.style) !== 'standard' ? 'themed' : ''}" style="--c:${cdColour(c)}" data-a="editCd" data-id="${c.id}"><span class="cd-mini-title">${esc(c.title)}</span>${cdBox(c, 'small')}</button>`).join('');
   return `<div class="section-label"><span>Countdowns</span><button data-a="go" data-h="#/countdowns">See all</button></div>
@@ -2215,6 +2302,7 @@ function listCountdowns(l) {
 function departureCards(l) {
   if (missing('countdowns')) return '';
   const cds = cdSorted(S.data.countdowns.filter((c) => c.list_id === l.id && upcoming(c)));
+  if (boardMode() !== 'cards' && cds.length) return `<div class="cd-hero-wrap">${cdBoardHtml(cds, boardMode())}<button class="link-btn" data-a="newCd" data-list="${l.id}" data-kind="departure" style="padding-top:6px">+ Add another countdown</button></div>`;
   const cards = cds.map((c) => `<div class="cd-card hero" style="--c:${cdColour(c)}" data-a="editCd" data-id="${c.id}">
       <div class="cd-top"><span class="cd-title">✈️ ${esc(c.title)}</span><span class="cd-date">${fmtWhen(c.target)}</span></div>
       <div class="cd-body">${cdBox(c, 'big')}</div></div>`).join('');
@@ -2225,6 +2313,10 @@ function countdownsView() {
   if (missing('countdowns')) return back + '<div class="empty"><div class="big">One more setup step</div>Run the November update in Supabase to switch on countdowns.</div>';
   const all = cdSorted(S.data.countdowns);
   const next = all.filter(upcoming), old = all.filter((c) => !upcoming(c)).reverse();
+  if (boardMode() !== 'cards') {
+    return back + boardSeg() + cdBoardHtml(next, boardMode(), { more: '<button data-a="newCd">+ New countdown</button>' })
+      + (old.length ? `<div class="section-label">Passed</div>${cdBoardHtml(old.slice(0, 8), boardMode())}` : '');
+  }
   const card = (c) => {
     const l = c.list_id && getList(c.list_id);
     return `<div class="cd-card" style="--c:${cdColour(c)}" data-a="editCd" data-id="${c.id}">
@@ -2232,7 +2324,7 @@ function countdownsView() {
       <div class="cd-body">${cdBox(c, 'big')}</div>
       <div class="cd-date">${fmtWhen(c.target)}</div></div>`;
   };
-  return back + (next.length ? `<div class="cd-grid">${next.map(card).join('')}</div>` : '<div class="empty"><div class="big">Nothing to count down to</div>Add a trip, a birthday, a match or a deadline. You can link it to a list too.</div>')
+  return back + boardSeg() + (next.length ? `<div class="cd-grid">${next.map(card).join('')}</div>` : '<div class="empty"><div class="big">Nothing to count down to</div>Add a trip, a birthday, a match or a deadline. You can link it to a list too.</div>')
     + (old.length ? `<div class="section-label">Passed</div><div class="cd-grid past">${old.slice(0, 10).map(card).join('')}</div>` : '');
 }
 function countdownSheet(s) {
@@ -2637,6 +2729,7 @@ function seedBudget() {
 
 Object.assign(A, {
   editHome: () => openSheet({ kind: 'homeEdit' }),
+  setBoard: (el) => { setPref('cdBoard', el.dataset.v); SPUN.clear(); render(); },
   homeToggle: (el) => { const lay = homeLayout(), id = el.dataset.id; lay.hidden = lay.hidden.includes(id) ? lay.hidden.filter((x) => x !== id) : [...lay.hidden, id]; saveHomeLayout(lay); },
   homeReset: async () => { if (!await ask('Put the home screen back to how it started?', 'Reset')) return; setPref('home', null); render(); renderSheets(true); },
 });
