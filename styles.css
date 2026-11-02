@@ -627,3 +627,11 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 }
 #view.no-tabs { padding-bottom: calc(var(--safe-b) + 40px); }
 .login { min-height: 100%; }
+
+/* recurring budget */
+.wd-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.wd-row button { padding: 8px 0; border-radius: 8px; background: var(--fill); font-size: 13px; font-weight: 600; color: var(--label); }
+.wd-row button.on { background: var(--accent); color: #fff; }
+.b-amt-wrap { display: flex; flex-direction: column; align-items: flex-end; flex: none; gap: 2px; }
+.b-amt-wrap small { font-size: 11px; color: var(--label2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.b-row .row-meta .pill { white-space: nowrap; }

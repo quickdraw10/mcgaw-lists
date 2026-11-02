@@ -98,3 +98,6 @@ Run `supabase/update-nov-2026.sql` once in Supabase → SQL Editor, then redeplo
 - **Press and hold** any item to move it.
 - **Countdowns:** stand-alone or linked to any list; days, hours, minutes and months.
 - **Budget:** Mike & Louise only (enforced by the database). Accounts, money in/out, savings, transfers, untick to see the difference, savings pots, monthly log.
+
+- **Budget — regular payments:** set up once (every week / 2 weeks / 4 weeks / month / year, on a weekday or day of the month, ongoing or until a date) and they fill every month. Change one month only, or change from a month onwards — earlier months keep their figures.
+- **Work lists on the home screen** show how many urgent/important tasks are overdue, due today, tomorrow and later this week.

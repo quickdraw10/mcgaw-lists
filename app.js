@@ -228,7 +228,7 @@ const sortItems = (a, b) => a.position - b.position;
    ============================================================ */
 const TABLES = ['members', 'lists', 'list_access', 'items', 'meal_slots', 'meal_presence', 'notifications'];
 // Added in the November update — the app keeps working if they're not set up yet
-const OPTIONAL = ['gift_status', 'countdowns', 'budget_accounts', 'budget_pots', 'budget_entries'];
+const OPTIONAL = ['gift_status', 'countdowns', 'budget_accounts', 'budget_pots', 'budget_entries', 'budget_recurring'];
 
 class SupaStore {
   constructor() {
@@ -287,7 +287,7 @@ class SupaStore {
 
 class DemoStore {
   constructor() {
-    this.key = 'mcgaw-lists-demo-v4';
+    this.key = 'mcgaw-lists-demo-v5';
     try { this.db = JSON.parse(localStorage.getItem(this.key)); } catch { this.db = null; }
     if (!this.db) this.db = seedDemo();
     this.me = null;
@@ -316,6 +316,7 @@ class DemoStore {
       budget_accounts: budget ? db.budget_accounts || [] : [],
       budget_pots: budget ? db.budget_pots || [] : [],
       budget_entries: budget ? db.budget_entries || [] : [],
+      budget_recurring: budget ? db.budget_recurring || [] : [],
       missing: [],
       meal_slots: db.meal_slots.filter((m) => ids.has(m.list_id)),
       meal_presence: db.meal_presence.filter((m) => ids.has(m.list_id)),
@@ -355,7 +356,8 @@ class DemoStore {
     for (const r of gone) {
       if (t === 'lists') for (const tt of ['list_access', 'items', 'meal_slots', 'meal_presence', 'notifications']) this.db[tt] = this.db[tt].filter((x) => x.list_id !== r.id);
       if (t === 'items') { this.db.items = this.db.items.filter((x) => x.parent_id !== r.id); this.db.gift_status = (this.db.gift_status || []).filter((g) => g.item_id !== r.id); }
-      if (t === 'budget_accounts') this.db.budget_entries = this.db.budget_entries.filter((e) => e.account_id !== r.id);
+      if (t === 'budget_accounts') { this.db.budget_entries = this.db.budget_entries.filter((e) => e.account_id !== r.id); this.db.budget_recurring = (this.db.budget_recurring || []).filter((e) => e.account_id !== r.id); }
+      if (t === 'budget_recurring') this.db.budget_entries = this.db.budget_entries.filter((e) => e.rule_id !== r.id);
     }
     this.persist();
   }
@@ -466,7 +468,7 @@ function seedDemo() {
 const store = DEMO ? new DemoStore() : new SupaStore();
 const S = {
   me: null, ready: false,
-  data: { members: FAMILY, lists: [], list_access: [], items: [], meal_slots: [], meal_presence: [], notifications: [], gift_status: [], countdowns: [], budget_accounts: [], budget_pots: [], budget_entries: [], missing: [] },
+  data: { members: FAMILY, lists: [], list_access: [], items: [], meal_slots: [], meal_presence: [], notifications: [], gift_status: [], countdowns: [], budget_accounts: [], budget_pots: [], budget_entries: [], budget_recurring: [], missing: [] },
   sheets: [], filter: 'all', ui: {},
 };
 const ui = (k, def) => (k in S.ui ? S.ui[k] : def);
@@ -606,6 +608,14 @@ function listSubtitle(l) {
     case 'shopping': return open.length ? `${open.length} to get` : 'All got';
     case 'todo': case 'work': {
       const od = open.filter((i) => i.due && i.due < today()).length;
+      if (l.type === 'work') {
+        const t = today(), tm = ymd(addDays(new Date(), 1)), wk = ymd(addDays(new Date(), 7));
+        const hot = open.filter((i) => priOf(i) > 0 && i.due);
+        const n = (f) => hot.filter(f).length;
+        const pills = [[n((i) => i.due < t), 'overdue', 'red'], [n((i) => i.due === t), 'today', 'red'], [n((i) => i.due === tm), 'tomorrow', 'orange'], [n((i) => i.due > tm && i.due <= wk), 'this week', 'blue']]
+          .filter(([c]) => c).map(([c, w, cls]) => `<span class="pill ${cls}">${c} ${w}</span>`).join('');
+        return pills ? `<span class="muted">Priority:</span> ${pills}` : `${open.length} open · nothing urgent this week`;
+      }
       return `${open.length} open${od ? ` · <span style="color:var(--red)">${od} overdue</span>` : ''}`;
     }
     case 'christmas': {
@@ -2399,10 +2409,17 @@ Object.assign(INPUT, {
 
 /* ============================================================
    Monthly budget (Mike & Louise)
+   Regular payments are set up once (budget_recurring) and appear in
+   every month they apply to. One-offs and per-month changes live in
+   budget_entries (rule_id set = a change to a regular payment).
    ============================================================ */
 const B_KINDS = { in: 'Money in', out: 'Bills & spending', save: 'Savings', transfer: 'Transfers' };
 const B_KIND_SHORT = { in: 'In', out: 'Out', save: 'Saving', transfer: 'Transfer' };
-const B_CATS = ['Mortgage / rent', 'Council tax', 'Energy', 'Water', 'Phone & broadband', 'Insurance', 'Car', 'Fuel', 'Food shopping', 'Kids', 'Clubs & activities', 'Subscriptions', 'Eating out', 'Holidays', 'Gifts', 'Other'];
+const B_CATS = ['Mortgage / rent', 'Council tax', 'Energy', 'Water', 'Phone & broadband', 'Insurance', 'Car', 'Fuel', 'Food shopping', 'Kids', 'Pocket money', 'Clubs & activities', 'Subscriptions', 'Eating out', 'Holidays', 'Gifts', 'Other'];
+const FREQS = [['once', 'Just this month'], ['weekly', 'Every week'], ['fortnightly', 'Every 2 weeks'], ['4weekly', 'Every 4 weeks'], ['monthly', 'Every month'], ['yearly', 'Every year']];
+const STEP = { weekly: 7, fortnightly: 14, '4weekly': 28 };
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const WD_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 const curMonth = () => monthKey(new Date());
 const addMonths = (k, n) => { const [y, m] = k.split('-').map(Number); return monthKey(new Date(y, m - 1 + n, 1)); };
@@ -2414,12 +2431,66 @@ const bAccounts = () => [...S.data.budget_accounts].sort((a, b) => a.sort - b.so
 const bPots = () => [...S.data.budget_pots].sort((a, b) => a.sort - b.sort);
 const bAccount = (id) => S.data.budget_accounts.find((a) => a.id === id);
 const bPot = (id) => S.data.budget_pots.find((p) => p.id === id);
-const bEntries = (month) => S.data.budget_entries.filter((e) => e.month === month);
-const bMonths = () => [...new Set(S.data.budget_entries.map((e) => e.month))].sort().reverse();
+const bRules = () => S.data.budget_recurring || [];
+const bRule = (id) => bRules().find((r) => r.id === id);
 const bMonth = () => ui('bMonth', curMonth());
+const dayDiff = (a, b) => Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 864e5);
+
+// Every date a regular payment falls on within a month
+function ruleDates(r, month) {
+  const [y, m] = month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1), last = new Date(y, m, 0);
+  const start = parseYmd(r.start_date), end = r.end_date ? parseYmd(r.end_date) : null;
+  if (start > last || (end && end < first)) return [];
+  const ok = (d) => d >= start && (!end || d <= end);
+  const out = [];
+  if (r.freq === 'monthly') {
+    const dd = !r.day || r.day > last.getDate() ? last.getDate() : r.day;
+    const d = new Date(y, m - 1, dd); if (ok(d)) out.push(d);
+  } else if (r.freq === 'yearly') {
+    if (start.getMonth() === m - 1) { const d = new Date(y, m - 1, Math.min(start.getDate(), last.getDate())); if (ok(d)) out.push(d); }
+  } else {
+    const step = STEP[r.freq] || 7;
+    const wd = r.weekday ?? start.getDay();
+    const anchor = new Date(start.getFullYear(), start.getMonth(), start.getDate() + ((wd - start.getDay() + 7) % 7));
+    let k = Math.max(0, Math.ceil(dayDiff(anchor, first) / step));
+    for (let d = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + k * step); d <= last; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + step)) if (ok(d)) out.push(d);
+  }
+  return out;
+}
+function nextOccurrence(r, fromDate) {
+  for (let k = 0; k < 24; k++) {
+    const mk = addMonths(monthKey(fromDate), k);
+    const d = ruleDates(r, mk).find((x) => x >= fromDate);
+    if (d) return d;
+  }
+  return null;
+}
+function freqText(r) {
+  if (r.freq === 'monthly') return `Monthly · ${!r.day ? 'last day' : ordinal(r.day)}`;
+  if (r.freq === 'yearly') { const s = parseYmd(r.start_date); return `Yearly · ${s.getDate()} ${MONTHS[s.getMonth()]}`; }
+  const wd = WEEKDAYS[r.weekday ?? parseYmd(r.start_date).getDay()];
+  return { weekly: `Every ${wd}`, fortnightly: `Every other ${wd}`, '4weekly': `Every 4th ${wd}` }[r.freq];
+}
+
+// Everything that counts in a month: regular payments + one-offs
+function bRows(month) {
+  const rows = [];
+  for (const r of bRules()) {
+    const dates = ruleDates(r, month);
+    if (!dates.length) continue;
+    const ov = S.data.budget_entries.find((e) => e.rule_id === r.id && e.month === month);
+    const auto = n2(r.amount * dates.length);
+    rows.push({ key: 'r:' + r.id, rule: r, ov, kind: r.kind, name: r.name, amount: ov && ov.custom_amount ? n2(ov.amount) : auto, auto, each: n2(r.amount), count: dates.length, day: dates[0].getDate(), account_id: r.account_id, to_account_id: r.to_account_id, pot_id: r.pot_id, category: r.category, note: (ov && ov.note) || r.note, included: ov ? ov.included : true });
+  }
+  for (const e of S.data.budget_entries.filter((x) => x.month === month && !x.rule_id)) {
+    rows.push({ key: 'e:' + e.id, entry: e, kind: e.kind, name: e.name, amount: n2(e.amount), day: e.day, account_id: e.account_id, to_account_id: e.to_account_id, pot_id: e.pot_id, category: e.category, note: e.note, included: e.included });
+  }
+  return rows;
+}
 function bTotals(month, acc, onlyIncluded = true) {
-  const es = bEntries(month).filter((e) => !onlyIncluded || e.included);
-  const sum = (f) => n2(es.filter(f).reduce((s, e) => s + (+e.amount || 0), 0));
+  const rs = bRows(month).filter((e) => !onlyIncluded || e.included);
+  const sum = (f) => n2(rs.filter(f).reduce((s, e) => s + e.amount, 0));
   let tIn, tOut, tSave;
   if (!acc) { tIn = sum((e) => e.kind === 'in'); tOut = sum((e) => e.kind === 'out'); tSave = sum((e) => e.kind === 'save'); }
   else {
@@ -2429,39 +2500,56 @@ function bTotals(month, acc, onlyIncluded = true) {
   }
   return { in: tIn, out: tOut, save: tSave, left: n2(tIn - tOut - tSave) };
 }
+function bFirstMonth() {
+  const ks = [...bRules().map((r) => monthKey(parseYmd(r.start_date))), ...S.data.budget_entries.map((e) => e.month)];
+  return ks.length ? ks.sort()[0] : null;
+}
+function bMonths() {
+  const first = bFirstMonth();
+  if (!first) return [];
+  const lastEntry = S.data.budget_entries.map((e) => e.month).sort().pop() || first;
+  const last = [curMonth(), lastEntry].sort().pop();
+  const out = [];
+  for (let k = first; k <= last && out.length < 120; k = addMonths(k, 1)) out.push(k);
+  return out.reverse();
+}
 function potBalance(pot, upTo) {
-  return n2((+pot.opening || 0) + S.data.budget_entries.filter((e) => e.kind === 'save' && e.included && e.pot_id === pot.id && e.month <= upTo).reduce((s, e) => s + (+e.amount || 0), 0));
+  let bal = +pot.opening || 0;
+  const first = bFirstMonth();
+  if (first) for (let k = first; k <= upTo; k = addMonths(k, 1)) bal += bRows(k).filter((e) => e.kind === 'save' && e.included && e.pot_id === pot.id).reduce((s, e) => s + e.amount, 0);
+  return n2(bal);
 }
 function budgetTile() {
   const m = curMonth();
-  const has = bEntries(m).length;
-  const t = bTotals(m);
+  const has = !missing('budget_entries') && bRows(m).length;
+  const t = has ? bTotals(m) : null;
   return `<button class="budget-tile" data-a="go" data-h="#/budget">
     <span class="tile-icon sm" style="--c:#248A3D">£</span>
-    <span class="bt-main"><span class="bt-title">Budget · ${FULL_MONTHS[new Date().getMonth()]}</span><span class="bt-sub">${missing('budget_entries') ? 'Finish setting up' : has ? `In ${gbp(t.in)} · Out ${gbp(t.out + t.save)}` : 'Start this month'}</span></span>
+    <span class="bt-main"><span class="bt-title">Budget · ${FULL_MONTHS[new Date().getMonth()]}</span><span class="bt-sub">${missing('budget_entries') ? 'Finish setting up' : has ? `In ${gbp(t.in)} · Out ${gbp(t.out + t.save)}` : 'Add your regular payments'}</span></span>
     ${has ? `<span class="bt-left ${t.left < 0 ? 'neg' : ''}">${gbp(t.left)}<small>left</small></span>` : ''}
     <span class="chev">${icon('chevR', 16, 2.4)}</span></button>`;
 }
 function budgetRow(e, acc) {
   const a = bAccount(e.account_id), to = bAccount(e.to_account_id), pot = bPot(e.pot_id);
   const meta = [];
-  if (e.day) meta.push(`<span>${ordinal(e.day)}</span>`);
-  if (!acc && a) meta.push(`<span class="acc-dot" style="--c:${a.colour || '#8E8E93'}">${esc(a.name)}</span>`);
+  if (e.rule) meta.push(`<span class="pill">${icon('cal', 11, 2.4)} ${esc(freqText(e.rule))}${e.count > 1 ? ` ×${e.count}` : ''}</span>`);
+  else meta.push(`<span class="pill">One-off${e.day ? ' · ' + ordinal(e.day) : ''}</span>`);
+  if (e.rule && e.rule.end_date) meta.push(`<span>until ${fmtDay(parseYmd(e.rule.end_date))} ${parseYmd(e.rule.end_date).getFullYear()}</span>`);
+  if (!acc && a && e.kind !== 'transfer') meta.push(`<span class="acc-dot" style="--c:${a.colour || '#8E8E93'}">${esc(a.name)}</span>`);
   if (e.kind === 'transfer') meta.push(`<span>${esc(a?.name || '?')} → ${esc(to?.name || '?')}</span>`);
   if (e.kind === 'save' && pot) meta.push(`<span>→ ${esc(pot.name)}</span>`);
   if (e.category) meta.push(`<span>${esc(e.category)}</span>`);
-  if (e.note) meta.push('<span>📝</span>');
-  let sign = '';
-  if (e.kind === 'in' || (acc && e.kind === 'transfer' && e.to_account_id === acc)) sign = 'in';
+  if (e.ov && e.ov.custom_amount) meta.push('<span class="pill orange">Changed this month</span>');
+  const sign = e.kind === 'in' || (acc && e.kind === 'transfer' && e.to_account_id === acc) ? 'in' : '';
   return `<div class="row b-row ${e.included ? '' : 'off'}" style="--indent:50px">
-    <button class="check ${e.included ? 'on' : ''}" style="--c:var(--accent)" data-a="bToggle" data-id="${e.id}" aria-label="Include"></button>
-    <div class="row-main" data-a="bEdit" data-id="${e.id}"><div class="row-title">${esc(e.name)}</div>${meta.length ? `<div class="row-meta">${meta.join('')}</div>` : ''}</div>
-    <span class="b-amt ${sign}">${sign ? '+' : ''}${gbp(e.amount)}</span></div>`;
+    <button class="check ${e.included ? 'on' : ''}" style="--c:var(--accent)" data-a="bToggle" data-k="${e.key}" aria-label="Count this month"></button>
+    <div class="row-main" data-a="bEdit" data-k="${e.key}"><div class="row-title">${esc(e.name)}</div><div class="row-meta">${meta.join('')}</div></div>
+    <span class="b-amt-wrap"><span class="b-amt ${sign}">${sign ? '+' : ''}${gbp(e.amount)}</span>${e.rule && e.count > 1 && !(e.ov && e.ov.custom_amount) ? `<small>${gbp(e.each)} × ${e.count}</small>` : ''}</span></div>`;
 }
 function budgetView() {
   const nav = `<div class="nav"><button class="back" data-a="go" data-h="#/">${icon('chevL', 22, 2.4)}Lists</button><div class="actions">${canBudget() && !missing('budget_entries') && bAccounts().length ? `<button class="icon-btn" data-a="bAccounts" aria-label="Accounts and pots">${icon('more', 20, 2.6)}</button><button class="icon-btn solid" data-a="bNew" aria-label="Add">${icon('plus', 20, 2.4)}</button>` : ''}</div></div><h1 class="large">Budget</h1>`;
   if (!canBudget()) return nav + '<div class="empty"><div class="big">Private</div>Only Mike and Louise can see the budget.</div>';
-  if (missing('budget_entries')) return nav + '<div class="empty"><div class="big">One more setup step</div>Run the November update in Supabase to switch on the budget.</div>';
+  if (missing('budget_entries') || missing('budget_recurring')) return nav + '<div class="empty"><div class="big">One more setup step</div>Run the latest November update in Supabase to switch on the budget.</div>';
   if (!bAccounts().length) {
     return nav + `<div class="card-pad"><div class="big-q">Which accounts do you want to track?</div>
       <p class="hint" style="margin:6px 0 14px">Tap to add. You can rename or add more later.</p>
@@ -2471,14 +2559,12 @@ function budgetView() {
   }
   const m = bMonth(), acc = ui('bAcc', null);
   const accs = bAccounts();
-  const monthNav = `<div class="week-nav"><button class="icon-btn" data-a="bMonth" data-d="-1">${icon('chevL', 18, 2.6)}</button><div class="label">${monthLabel(m)}<small>${m === curMonth() ? 'This month' : m < curMonth() ? 'Past month' : 'Future month'}</small></div><button class="icon-btn" data-a="bMonth" data-d="1">${icon('chevR', 18, 2.6)}</button></div>`;
+  const monthNav = `<div class="week-nav"><button class="icon-btn" data-a="bMonth" data-d="-1">${icon('chevL', 18, 2.6)}</button><div class="label">${monthLabel(m)}<small>${m === curMonth() ? 'This month' : m < curMonth() ? 'Past month' : 'Coming up'}</small></div><button class="icon-btn" data-a="bMonth" data-d="1">${icon('chevR', 18, 2.6)}</button></div>`;
   const chips = `<div class="chips" style="margin-top:12px">${[[null, 'All accounts'], ...accs.map((a) => [a.id, a.name])].map(([id, n]) => `<button class="chip ${acc === id ? 'on' : ''}" data-a="bAcc" data-v="${id || ''}">${id ? `<span class="dot" style="--c:${bAccount(id).colour || '#8E8E93'}"></span>` : ''}${esc(n)}</button>`).join('')}</div>`;
-  const all = bEntries(m);
+  const all = bRows(m);
   if (!all.length) {
-    const prev = bMonths().find((k) => k < m);
-    return nav + monthNav + `<div class="empty"><div class="big">Nothing in ${monthLabel(m)} yet</div>${prev ? `Start from ${monthLabel(prev)} — everything is copied across and ticked.` : 'Add your income, bills and savings. Next month you can copy them across in one tap.'}<br><br>
-      ${prev ? `<button class="btn" data-a="bCopy" data-from="${prev}">Copy ${monthLabel(prev)}</button><div style="height:10px"></div>` : ''}
-      <button class="btn ${prev ? 'secondary' : ''}" data-a="bNew">${icon('plus', 20, 2.4)} Add the first item</button></div>` + budgetLog(m) + potsSection(m);
+    return nav + monthNav + `<div class="empty"><div class="big">Nothing in ${monthLabel(m)}</div>Add your wages, bills, savings and transfers once — choose how often they repeat and they’ll fill every month for you.<br><br>
+      <button class="btn" data-a="bNew">${icon('plus', 20, 2.4)} Add a regular payment</button></div>` + potsSection(m) + budgetLog(m);
   }
   const t = bTotals(m, acc), full = bTotals(m, acc, false);
   const diff = n2(full.out + full.save - t.out - t.save - (full.in - t.in));
@@ -2488,14 +2574,14 @@ function budgetView() {
   for (const k of ['in', 'out', 'save', 'transfer']) {
     const rows = shown.filter((e) => e.kind === k).sort(sortE);
     if (!rows.length && k === 'transfer') continue;
-    const tot = n2(rows.filter((e) => e.included).reduce((s, e) => s + (+e.amount || 0), 0));
+    const tot = n2(rows.filter((e) => e.included).reduce((s, e) => s + e.amount, 0));
     sections += `<div class="section-label"><span>${B_KINDS[k]}${rows.length ? ` · ${gbp(tot)}` : ''}</span><button data-a="bNew" data-kind="${k}">+ Add</button></div>
       ${rows.length ? `<div class="group">${rows.map((e) => budgetRow(e, acc)).join('')}</div>` : ''}`;
   }
   const summary = `<div class="b-summary">
       <div class="b-left ${t.left < 0 ? 'neg' : ''}"><span>${acc ? esc(bAccount(acc).name) + ' · ' : ''}Left over</span><b>${gbp(t.left)}</b></div>
       <div class="b-grid"><div><span>In</span><b class="in">${gbp(t.in)}</b></div><div><span>Out</span><b>${gbp(t.out)}</b></div><div><span>Savings</span><b>${gbp(t.save)}</b></div></div>
-      ${diff ? `<div class="b-diff">Unticked items: ${diff > 0 ? `you’d save ${gbp(diff)}` : `${gbp(-diff)} less coming in`}</div>` : '<div class="b-diff">Untick anything to see the difference</div>'}
+      ${diff ? `<div class="b-diff">Unticked this month: ${diff > 0 ? `you’d save ${gbp(diff)}` : `${gbp(-diff)} less coming in`}</div>` : '<div class="b-diff">Untick anything to see the difference this month</div>'}
     </div>`;
   const perAcc = !acc && accs.length > 1 ? `<div class="section-label">By account</div><div class="group">${accs.map((a) => { const x = bTotals(m, a.id); return `<div class="row tap" data-a="bAcc" data-v="${a.id}"><span class="acc-swatch" style="--c:${a.colour || '#8E8E93'}"></span><div class="row-main"><div class="row-title">${esc(a.name)}</div><div class="row-sub">In ${gbp(x.in)} · Out ${gbp(x.out)}${x.save ? ` · Saved ${gbp(x.save)}` : ''}</div></div><span class="b-amt ${x.left < 0 ? 'neg' : ''}">${gbp(x.left)}</span></div>`; }).join('')}</div>` : '';
   return nav + monthNav + chips + summary + perAcc + sections + potsSection(m) + budgetLog(m);
@@ -2504,7 +2590,7 @@ function potsSection(m) {
   const pots = bPots();
   const rows = pots.map((p) => {
     const bal = potBalance(p, m);
-    const added = n2(bEntries(m).filter((e) => e.kind === 'save' && e.included && e.pot_id === p.id).reduce((s, e) => s + (+e.amount || 0), 0));
+    const added = n2(bRows(m).filter((e) => e.kind === 'save' && e.included && e.pot_id === p.id).reduce((s, e) => s + e.amount, 0));
     const pct = p.target ? Math.min(100, (bal / p.target) * 100) : 0;
     return `<div class="pot" style="--c:${p.colour || '#30B05A'}" data-a="bPot" data-id="${p.id}">
       <div class="pot-top"><b>${esc(p.name)}</b><span>${gbp(bal)}</span></div>
@@ -2518,39 +2604,77 @@ function potsSection(m) {
 function budgetLog(cur) {
   const months = bMonths();
   if (!months.length) return '';
-  const rows = months.slice(0, 24).map((k) => { const t = bTotals(k); return `<tr class="${k === cur ? 'on' : ''}" data-a="bGoMonth" data-m="${k}"><td>${monthLabel(k, true)}</td><td class="in">${gbp(t.in)}</td><td>${gbp(t.out)}</td><td>${gbp(t.save)}</td><td class="${t.left < 0 ? 'neg' : ''}"><b>${gbp(t.left)}</b></td></tr>`; }).join('');
+  const rows = months.slice(0, 36).map((k) => { const t = bTotals(k); return `<tr class="${k === cur ? 'on' : ''}" data-a="bGoMonth" data-m="${k}"><td>${monthLabel(k, true)}</td><td class="in">${gbp(t.in)}</td><td>${gbp(t.out)}</td><td>${gbp(t.save)}</td><td class="${t.left < 0 ? 'neg' : ''}"><b>${gbp(t.left)}</b></td></tr>`; }).join('');
   const tot = months.reduce((s, k) => { const t = bTotals(k); return { in: s.in + t.in, out: s.out + t.out, save: s.save + t.save, left: s.left + t.left }; }, { in: 0, out: 0, save: 0, left: 0 });
   return `<div class="section-label">Monthly log</div>
     <div class="group b-log-wrap"><table class="b-log"><thead><tr><th>Month</th><th>In</th><th>Out</th><th>Saved</th><th>Left</th></tr></thead><tbody>${rows}</tbody>
     ${months.length > 1 ? `<tfoot><tr><td>Total</td><td class="in">${gbp(tot.in)}</td><td>${gbp(tot.out)}</td><td>${gbp(tot.save)}</td><td><b>${gbp(tot.left)}</b></td></tr></tfoot>` : ''}</table></div>
     <p class="hint">All accounts, ticked items only. Tap a month to open it.</p>`;
 }
+
+/* ---------- Add / edit sheet ---------- */
 function budgetEntrySheet(s) {
   const d = s.draft;
   const accs = bAccounts(), pots = bPots();
-  const later = s.id ? S.data.budget_entries.filter((e) => e.series === d.series && e.month > d.month).length : 0;
-  const ok = d.name.trim() && d.amount !== '' && !isNaN(parseFloat(d.amount));
+  const ok = d.name.trim() && d.amount !== '' && !isNaN(parseAmt(d.amount));
   const accSel = (f, label) => `<div class="field"><label>${label}</label><select data-change="bField" data-f="${f}">${f === 'to_account_id' ? '<option value="">Choose…</option>' : ''}${accs.map((a) => `<option value="${a.id}" ${d[f] === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>`;
-  return head(s.id ? 'Edit' : 'Add', s.id ? '<button class="txt danger" data-a="bDelete">Delete</button>' : undefined, `<button class="txt r" data-a="bSave" ${ok ? '' : 'disabled style="opacity:.4"'}>Save</button>`) + `
+  const rep = d.freq !== 'once';
+  const weekly = !!STEP[d.freq];
+  const r = s.ruleId && bRule(s.ruleId);
+  const count = rep ? ruleDates(draftRule(d), d.month).length : 1;
+  const amt = parseAmt(d.amount);
+  let html = head(s.ruleId || s.entryId ? 'Edit' : 'Add', s.ruleId || s.entryId ? '<span></span>' : undefined, `<button class="txt r" data-a="bSave" ${ok ? '' : 'disabled style="opacity:.4"'}>Save</button>`) + `
     <div class="seg" style="margin:4px 0 12px">${Object.entries(B_KIND_SHORT).map(([k, v]) => `<button class="${d.kind === k ? 'on' : ''}" data-a="bKind" data-v="${k}">${v}</button>`).join('')}</div>
-    <input class="big-input" id="b-name" value="${esc(d.name)}" placeholder="${{ in: 'e.g. Salary', out: 'e.g. Mortgage', save: 'e.g. Holiday fund', transfer: 'e.g. Pocket money' }[d.kind]}" data-input="bText" data-f="name" autocomplete="off">
+    <input class="big-input" id="b-name" value="${esc(d.name)}" placeholder="${{ in: 'e.g. Salary', out: 'e.g. Mortgage', save: 'e.g. Holiday fund', transfer: 'e.g. Weekly spending money' }[d.kind]}" data-input="bText" data-f="name" autocomplete="off">
     <div class="group" style="margin-top:12px">
-      <div class="field"><label>Amount (£)</label><input id="b-amount" inputmode="decimal" value="${esc(d.amount)}" placeholder="0.00" data-input="bText" data-f="amount"></div>
+      <div class="field"><label>${rep ? 'Each payment (£)' : 'Amount (£)'}</label><input id="b-amount" inputmode="decimal" value="${esc(d.amount)}" placeholder="0.00" data-input="bText" data-f="amount"></div>
       ${accSel('account_id', d.kind === 'transfer' ? 'From' : d.kind === 'in' ? 'Into' : 'From account')}
       ${d.kind === 'transfer' ? accSel('to_account_id', 'To') : ''}
       ${d.kind === 'save' ? `<div class="field"><label>Pot</label><select data-change="bField" data-f="pot_id"><option value="">No pot</option>${pots.map((p) => `<option value="${p.id}" ${d.pot_id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}<option value="__new">+ New pot…</option></select></div>` : ''}
-      ${d.kind === 'out' ? `<div class="field"><label>Category</label><input list="b-cats" value="${esc(d.category || '')}" placeholder="Optional" data-input="bText" data-f="category"></div><datalist id="b-cats">${[...new Set([...B_CATS, ...S.data.budget_entries.map((e) => e.category).filter(Boolean)])].map((c) => `<option value="${esc(c)}">`).join('')}</datalist>` : ''}
-      <div class="field"><label>Day of month</label><input inputmode="numeric" value="${d.day || ''}" placeholder="e.g. 1" data-input="bText" data-f="day"></div>
-      <div class="field tap" data-a="bIncluded"><label>Counted in totals</label><span style="flex:1"></span><span class="switch ${d.included ? 'on' : ''}"></span></div>
+      ${d.kind === 'out' ? `<div class="field"><label>Category</label><input list="b-cats" value="${esc(d.category || '')}" placeholder="Optional" data-input="bText" data-f="category"></div><datalist id="b-cats">${[...new Set([...B_CATS, ...bRules().map((x) => x.category), ...S.data.budget_entries.map((e) => e.category)].filter(Boolean))].map((c) => `<option value="${esc(c)}">`).join('')}</datalist>` : ''}
     </div>
-    ${d.kind === 'save' ? '<p class="hint">To take money out of a pot, use a minus amount, e.g. −200.</p>' : ''}
-    <div class="section-label">Note</div><div class="group"><textarea class="textarea" style="min-height:64px" placeholder="Optional" data-input="bText" data-f="note">${esc(d.note || '')}</textarea></div>
-    ${later ? `<div class="group" style="margin-top:12px"><div class="field tap" data-a="bLater"><label>Also change later months (${later})</label><span style="flex:1"></span><span class="switch ${d.applyLater ? 'on' : ''}"></span></div></div>` : ''}
-    <p class="hint">${monthLabel(d.month)}. Each new month copies this month’s items, so changes carry forward.</p>`;
+    <div class="section-label">How often</div>
+    <div class="group">
+      <div class="field"><label>Repeats</label><select data-change="bField" data-f="freq">${FREQS.map(([k, v]) => `<option value="${k}" ${d.freq === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+      ${weekly ? `<div class="field col"><label>On</label><div class="wd-row">${WD_ORDER.map((w) => `<button class="${+d.weekday === w ? 'on' : ''}" data-a="bWeekday" data-v="${w}">${WEEKDAYS[w].slice(0, 3)}</button>`).join('')}</div></div>` : ''}
+      ${d.freq === 'monthly' || d.freq === 'once' ? `<div class="field"><label>Day of month</label><select data-change="bField" data-f="day">${d.freq === 'once' ? '<option value="">Not set</option>' : ''}${Array.from({ length: 31 }, (_, i) => i + 1).map((n) => `<option value="${n}" ${+d.day === n ? 'selected' : ''}>${ordinal(n)}</option>`).join('')}${d.freq === 'monthly' ? `<option value="0" ${+d.day === 0 && d.day !== '' ? 'selected' : ''}>Last day</option>` : ''}</select></div>` : ''}
+      ${rep ? `<div class="field"><label>${d.freq === 'yearly' ? 'Date' : 'Starting'}</label><input type="date" value="${d.start_date}" data-change="bField" data-f="start_date"></div>
+      <div class="field"><label>Ends</label><div class="seg" style="flex:1"><button class="${d.ends ? '' : 'on'}" data-a="bEnds" data-v="0">Never</button><button class="${d.ends ? 'on' : ''}" data-a="bEnds" data-v="1">On a date</button></div></div>
+      ${d.ends ? `<div class="field"><label>Last payment by</label><input type="date" value="${d.end_date || ''}" data-change="bField" data-f="end_date"></div>` : ''}` : ''}
+    </div>
+    ${rep && !isNaN(amt) ? `<p class="hint">${monthLabel(d.month)}: ${count} payment${count === 1 ? '' : 's'} = <b>${gbp(amt * count)}</b>. ${d.ends && d.end_date ? `Stops after ${fmtDay(parseYmd(d.end_date))} ${parseYmd(d.end_date).getFullYear()}.` : 'Carries on every month until you stop it.'}</p>` : ''}
+    ${!rep ? `<p class="hint">Only counts in ${monthLabel(d.month)}.</p>` : ''}
+    ${d.kind === 'save' ? '<p class="hint">To take money out of a pot, use a minus amount, e.g. −200.</p>' : ''}`;
+  if (r) {
+    const ov = S.data.budget_entries.find((e) => e.rule_id === r.id && e.month === d.month);
+    const auto = n2(r.amount * ruleDates(r, d.month).length);
+    html += `<div class="section-label">Just for ${monthLabel(d.month)}</div>
+      <div class="group">
+        <div class="field tap" data-a="bOvIncluded"><label>Counted this month</label><span style="flex:1"></span><span class="switch ${ov ? (ov.included ? 'on' : '') : 'on'}"></span></div>
+        <div class="field"><label>This month’s total</label><input inputmode="decimal" value="${ov && ov.custom_amount ? n2(ov.amount) : ''}" placeholder="${n2(auto).toFixed(2)}" data-change="bOvAmount"></div>
+      </div>
+      <p class="hint">Use these if one month is different. Leave the total blank to use the usual amount.</p>`;
+  }
+  html += `<div class="section-label">Note</div><div class="group"><textarea class="textarea" style="min-height:64px" placeholder="Optional" data-input="bText" data-f="note">${esc(d.note || '')}</textarea></div>`;
+  if (r) {
+    const started = monthKey(parseYmd(r.start_date)) < d.month;
+    html += `<div class="stack-gap" style="margin-top:20px">
+      ${started ? `<button class="btn secondary" data-a="bStop">Stop it from ${monthLabel(d.month)}</button>` : ''}
+      <button class="btn danger" data-a="bDeleteRule">Delete from every month</button></div>
+      <p class="hint">${started ? 'Stopping keeps it in earlier months’ totals, so your log stays right. ' : ''}Changing the amount, account or timing starts from ${monthLabel(d.month)} — earlier months keep the old figures.</p>`;
+  } else if (s.entryId) {
+    html += `<div style="margin-top:20px"><button class="btn danger" data-a="bDeleteEntry">Delete</button></div>`;
+  }
+  return html;
+}
+const parseAmt = (v) => parseFloat(String(v).replace(/[£,\s]/g, '').replace('−', '-'));
+function draftRule(d) {
+  return { freq: d.freq, amount: parseAmt(d.amount) || 0, day: d.day === '' ? 1 : +d.day, weekday: +d.weekday, start_date: d.start_date, end_date: d.ends ? d.end_date || null : null };
 }
 function budgetPotSheet(s) {
   const d = s.draft;
   const p = s.id ? bPot(s.id) : null;
+  const hist = p ? bMonths().map((k) => bRows(k).filter((e) => e.kind === 'save' && e.included && e.pot_id === p.id).map((e) => ({ k, e }))).flat().slice(0, 30) : [];
   return head(p ? 'Savings pot' : 'New pot', p ? '<button class="txt danger" data-a="bPotDelete">Delete</button>' : undefined, `<button class="txt r" data-a="bPotSave" ${d.name.trim() ? '' : 'disabled style="opacity:.4"'}>Save</button>`) + `
     <input class="big-input" id="pot-name" value="${esc(d.name)}" placeholder="e.g. Holiday" data-input="bPotText" data-f="name" autocomplete="off" style="margin-top:6px">
     <div class="group" style="margin-top:12px">
@@ -2558,7 +2682,7 @@ function budgetPotSheet(s) {
       <div class="field"><label>Target (£)</label><input inputmode="decimal" value="${esc(d.target)}" placeholder="Optional" data-input="bPotText" data-f="target"></div>
     </div>
     <div class="section-label">Colour</div>${swatchHtml(d.colour, 'data-a="bPotColour"')}
-    ${p ? `<div class="section-label">History</div><div class="group">${S.data.budget_entries.filter((e) => e.kind === 'save' && e.pot_id === p.id && e.included).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 24).map((e) => `<div class="row"><div class="row-main" style="cursor:default"><div class="row-title" style="font-size:15px">${monthLabel(e.month, true)} · ${esc(e.name)}</div></div><span class="b-amt ${+e.amount >= 0 ? 'in' : ''}">${+e.amount >= 0 ? '+' : ''}${gbp(e.amount)}</span></div>`).join('') || '<div class="row"><div class="row-main muted">Nothing paid in yet</div></div>'}</div>` : ''}
+    ${p ? `<div class="section-label">Paid in</div><div class="group">${hist.map(({ k, e }) => `<div class="row"><div class="row-main" style="cursor:default"><div class="row-title" style="font-size:15px">${monthLabel(k, true)} · ${esc(e.name)}</div></div><span class="b-amt ${e.amount >= 0 ? 'in' : ''}">${e.amount >= 0 ? '+' : ''}${gbp(e.amount)}</span></div>`).join('') || '<div class="row"><div class="row-main muted">Nothing paid in yet</div></div>'}</div>` : ''}
     <p class="hint">The pot total is what was already in it plus every ticked saving into it, month by month.</p>`;
 }
 function budgetAccountsSheet() {
@@ -2566,13 +2690,30 @@ function budgetAccountsSheet() {
   return head('Accounts', '<span></span>') + `
     <div class="group">${accs.map((a) => `<div class="row"><span class="acc-swatch" style="--c:${a.colour || '#8E8E93'}"></span><input class="acc-name" value="${esc(a.name)}" data-change="bAccName" data-id="${a.id}"><button class="link-btn" style="color:var(--red)" data-a="bAccDelete" data-id="${a.id}">Delete</button></div>`).join('')}
       <div class="row"><span class="plus" style="width:20px">${icon('plus', 20, 2.4)}</span><input id="acc-new" class="acc-name" placeholder="Add an account" enterkeyhint="done" data-enter="bAccAdd" autocomplete="off"></div></div>
-    <p class="hint">Deleting an account removes its items from every month.</p>
+    <p class="hint">Deleting an account removes its payments from every month.</p>
+    <div class="section-label">Regular payments</div>
+    <div class="group">${bRules().filter((r) => !r.end_date || r.end_date >= today()).sort((a, b) => a.name.localeCompare(b.name)).map((r) => `<div class="row tap" data-a="bEditRule" data-id="${r.id}"><div class="row-main"><div class="row-title">${esc(r.name)}</div><div class="row-sub">${esc(freqText(r))} · ${gbp(r.amount)}${r.end_date ? ` · until ${fmtDay(parseYmd(r.end_date))}` : ''}</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`).join('') || '<div class="row"><div class="row-main muted">None yet</div></div>'}</div>
     <div class="section-label">Savings pots</div>
-    <div class="group">${bPots().map((p) => `<div class="row tap" data-a="bPot" data-id="${p.id}"><span class="acc-swatch" style="--c:${p.colour || '#30B05A'}"></span><div class="row-main"><div class="row-title">${esc(p.name)}</div><div class="row-sub">${gbp(potBalance(p, '9999-12-01'))}</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`).join('')}
+    <div class="group">${bPots().map((p) => `<div class="row tap" data-a="bPot" data-id="${p.id}"><span class="acc-swatch" style="--c:${p.colour || '#30B05A'}"></span><div class="row-main"><div class="row-title">${esc(p.name)}</div><div class="row-sub">${gbp(potBalance(p, curMonth()))}</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`).join('')}
       <div class="row tap" data-a="bPot"><span class="plus" style="width:20px">${icon('plus', 20, 2.4)}</span><div class="row-main"><div class="row-title" style="color:var(--accent)">New pot</div></div></div></div>`;
 }
 const ACC_COLOURS = ['#0A84FF', '#FF375F', '#5E5CE6', '#30B05A', '#FF9500', '#00A5A8', '#BF5AF2', '#8E8E93'];
-function bDraftFrom(e) { return { ...e, amount: e.amount != null ? String(n2(e.amount)) : '', day: e.day || '', applyLater: true }; }
+const firstOf = (k) => k;
+const lastOf = (k) => { const [y, m] = k.split('-').map(Number); return ymd(new Date(y, m, 0)); };
+const dayBefore = (s) => { const d = parseYmd(s); d.setDate(d.getDate() - 1); return ymd(d); };
+function draftFromRule(r, month) {
+  return { kind: r.kind, name: r.name, amount: String(n2(r.amount)), account_id: r.account_id, to_account_id: r.to_account_id || '', pot_id: r.pot_id || '', category: r.category || '', note: r.note || '', freq: r.freq, day: r.day ?? 1, weekday: r.weekday ?? parseYmd(r.start_date).getDay(), start_date: r.start_date, ends: !!r.end_date, end_date: r.end_date || '', month };
+}
+function draftFromEntry(e) {
+  return { kind: e.kind, name: e.name, amount: String(n2(e.amount)), account_id: e.account_id, to_account_id: e.to_account_id || '', pot_id: e.pot_id || '', category: e.category || '', note: e.note || '', freq: 'once', day: e.day || '', weekday: 5, start_date: e.month, ends: false, end_date: '', month: e.month };
+}
+async function setOverride(rule, month, patch) {
+  const ov = S.data.budget_entries.find((e) => e.rule_id === rule.id && e.month === month);
+  const next = { included: ov ? ov.included : true, custom_amount: ov ? ov.custom_amount : false, amount: ov ? ov.amount : 0, ...patch };
+  if (!next.custom_amount && next.included && !(ov && ov.note)) { if (ov) await del('budget_entries', { id: ov.id }); return; }
+  if (ov) await upd('budget_entries', { id: ov.id }, next);
+  else await ins('budget_entries', { id: uid(), rule_id: rule.id, month, kind: rule.kind, name: rule.name, account_id: rule.account_id, created_by: S.me, created_at: new Date().toISOString(), ...next });
+}
 Object.assign(A, {
   bMonth: (el) => { S.ui.bMonth = addMonths(bMonth(), +el.dataset.d); render(); },
   bGoMonth: (el) => { S.ui.bMonth = el.dataset.m; render(); $('#view').scrollTop = 0; },
@@ -2581,52 +2722,96 @@ Object.assign(A, {
   bAccounts: () => openSheet({ kind: 'bAccounts' }),
   bAccDelete: async (el) => {
     const a = bAccount(el.dataset.id);
-    const n = S.data.budget_entries.filter((e) => e.account_id === a.id).length;
-    if (!await ask(`Delete “${a.name}”${n ? ` and its ${n} item${n === 1 ? '' : 's'}` : ''}?`, 'Delete', true)) return;
+    if (!await ask(`Delete “${a.name}” and its payments from every month?`, 'Delete', true)) return;
     applyLocal('budget_entries', 'remove', { account_id: a.id });
+    applyLocal('budget_recurring', 'remove', { account_id: a.id });
     await del('budget_accounts', { id: a.id });
     if (S.ui.bAcc === a.id) S.ui.bAcc = null;
     renderSheets(true);
   },
   bNew: (el) => {
     if (!bAccounts().length) return toast('Add an account first');
+    const m = bMonth();
     const acc = ui('bAcc', null) || bAccounts()[0].id;
-    openSheet({ kind: 'bEntry', focus: 'b-name', draft: { kind: el.dataset?.kind || 'out', name: '', amount: '', account_id: acc, to_account_id: '', pot_id: '', category: '', day: '', included: true, note: '', month: bMonth(), series: uid(), applyLater: true } });
+    const start = m;
+    openSheet({ kind: 'bEntry', focus: 'b-name', draft: { kind: el.dataset?.kind || 'out', name: '', amount: '', account_id: acc, to_account_id: '', pot_id: '', category: '', note: '', freq: 'monthly', day: 1, weekday: 5, start_date: start, ends: false, end_date: '', month: m } });
   },
-  bEdit: (el) => { const e = S.data.budget_entries.find((x) => x.id === el.dataset.id); if (e) openSheet({ kind: 'bEntry', id: e.id, draft: bDraftFrom(e) }); },
+  bEdit: (el) => {
+    const [t, id] = el.dataset.k.split(':');
+    if (t === 'r') { const r = bRule(id); if (r) openSheet({ kind: 'bEntry', ruleId: r.id, draft: draftFromRule(r, bMonth()) }); }
+    else { const e = S.data.budget_entries.find((x) => x.id === id); if (e) openSheet({ kind: 'bEntry', entryId: e.id, draft: draftFromEntry(e) }); }
+  },
+  bEditRule: (el) => { const r = bRule(el.dataset.id); if (r) openSheet({ kind: 'bEntry', ruleId: r.id, draft: draftFromRule(r, bMonth()) }); },
   bKind: (el) => { topSheet().draft.kind = el.dataset.v; renderSheets(true); },
-  bIncluded: () => { const d = topSheet().draft; d.included = !d.included; renderSheets(true); },
-  bLater: () => { const d = topSheet().draft; d.applyLater = !d.applyLater; renderSheets(true); },
-  bToggle: (el) => { const e = S.data.budget_entries.find((x) => x.id === el.dataset.id); if (navigator.vibrate) navigator.vibrate(6); upd('budget_entries', { id: e.id }, { included: !e.included }); },
+  bWeekday: (el) => { topSheet().draft.weekday = +el.dataset.v; renderSheets(true); },
+  bEnds: (el) => { const d = topSheet().draft; d.ends = el.dataset.v === '1'; if (d.ends && !d.end_date) { const x = new Date(); x.setFullYear(x.getFullYear() + 1); d.end_date = ymd(x); } renderSheets(true); },
+  bToggle: (el) => {
+    const [t, id] = el.dataset.k.split(':');
+    if (navigator.vibrate) navigator.vibrate(6);
+    if (t === 'e') { const e = S.data.budget_entries.find((x) => x.id === id); upd('budget_entries', { id: e.id }, { included: !e.included }); return; }
+    const r = bRule(id), m = bMonth();
+    const ov = S.data.budget_entries.find((e) => e.rule_id === r.id && e.month === m);
+    setOverride(r, m, { included: ov ? !ov.included : false });
+  },
+  bOvIncluded: async () => {
+    const s = topSheet(), r = bRule(s.ruleId), m = s.draft.month;
+    const ov = S.data.budget_entries.find((e) => e.rule_id === r.id && e.month === m);
+    await setOverride(r, m, { included: ov ? !ov.included : false });
+    renderSheets(true);
+  },
   bSave: async () => {
     const s = topSheet(), d = s.draft;
-    const amount = parseFloat(String(d.amount).replace(/[£,\s]/g, '').replace('−', '-'));
+    const amount = parseAmt(d.amount);
     if (!d.name.trim() || isNaN(amount)) return;
     if (d.kind === 'transfer' && (!d.to_account_id || d.to_account_id === d.account_id)) return toast('Choose a different account to transfer to');
-    const day = parseInt(d.day, 10);
-    const row = { kind: d.kind, name: d.name.trim(), amount: n2(amount), account_id: d.account_id || null, to_account_id: d.kind === 'transfer' ? d.to_account_id : null, pot_id: d.kind === 'save' ? d.pot_id || null : null, category: d.kind === 'out' ? d.category?.trim() || null : null, day: day >= 1 && day <= 31 ? day : null, note: d.note?.trim() || null };
+    if (d.freq !== 'once' && d.ends && d.end_date && d.end_date < d.start_date) return toast('The end date is before it starts');
+    const base = { kind: d.kind, name: d.name.trim(), amount: n2(amount), account_id: d.account_id || null, to_account_id: d.kind === 'transfer' ? d.to_account_id : null, pot_id: d.kind === 'save' ? d.pot_id || null : null, category: d.kind === 'out' ? d.category?.trim() || null : null, note: d.note?.trim() || null };
+    const ruleFields = { freq: d.freq, day: d.freq === 'monthly' ? (d.day === '' ? 1 : +d.day) : null, weekday: STEP[d.freq] ? +d.weekday : null, start_date: d.start_date, end_date: d.ends ? d.end_date || null : null };
     S.sheets.pop();
-    if (s.id) {
-      await upd('budget_entries', { id: s.id }, { ...row, included: d.included });
-      if (d.applyLater) for (const e of S.data.budget_entries.filter((x) => x.series === d.series && x.month > d.month)) await upd('budget_entries', { id: e.id }, row);
+    const month = d.month;
+    // --- one-off ---
+    if (d.freq === 'once') {
+      const row = { ...base, day: d.day === '' ? null : +d.day };
+      if (s.entryId) return upd('budget_entries', { id: s.entryId }, row);
+      if (s.ruleId) { const r = bRule(s.ruleId); await endRuleBefore(r, month); }
+      return ins('budget_entries', { id: uid(), month, included: true, created_by: S.me, created_at: new Date().toISOString(), ...row });
+    }
+    // --- regular payment ---
+    if (s.entryId) await del('budget_entries', { id: s.entryId });
+    if (!s.ruleId) return ins('budget_recurring', { id: uid(), created_by: S.me, created_at: new Date().toISOString(), ...base, ...ruleFields });
+    const r = bRule(s.ruleId);
+    const money = ['kind', 'amount', 'account_id', 'to_account_id', 'pot_id'].some((k) => (r[k] ?? null) !== (base[k] ?? null)) || ['freq', 'day', 'weekday'].some((k) => (r[k] ?? null) !== (ruleFields[k] ?? null)) || r.start_date !== ruleFields.start_date;
+    const startedEarlier = monthKey(parseYmd(r.start_date)) < month;
+    if (money && startedEarlier && r.start_date === ruleFields.start_date) {
+      // keep history: old version ends before this month, new version starts here
+      const from = nextOccurrence({ ...r, ...ruleFields }, parseYmd(month)) || parseYmd(month);
+      const newId = uid();
+      await upd('budget_recurring', { id: r.id }, { end_date: dayBefore(month) });
+      await ins('budget_recurring', { id: newId, created_by: S.me, created_at: new Date().toISOString(), ...base, ...ruleFields, start_date: ymd(from) });
+      for (const e of S.data.budget_entries.filter((x) => x.rule_id === r.id && x.month >= month)) await upd('budget_entries', { id: e.id }, { rule_id: newId });
+      toast(`Changed from ${monthLabel(month)} on`);
     } else {
-      await ins('budget_entries', { id: uid(), series: d.series, month: d.month, included: d.included, created_by: S.me, created_at: new Date().toISOString(), ...row });
+      await upd('budget_recurring', { id: r.id }, { ...base, ...ruleFields });
     }
   },
-  bDelete: async () => {
-    const s = topSheet(), d = s.draft;
-    const later = S.data.budget_entries.filter((e) => e.series === d.series && e.month > d.month);
-    if (!await ask(later.length && d.applyLater ? `Delete “${d.name}” from ${monthLabel(d.month)} and the ${later.length} later month${later.length === 1 ? '' : 's'}?` : `Delete “${d.name}” from ${monthLabel(d.month)}?`, 'Delete', true)) return;
+  bStop: async () => {
+    const s = topSheet(), r = bRule(s.ruleId);
+    if (!await ask(`Stop “${r.name}” from ${monthLabel(s.draft.month)}? It stays in earlier months.`, 'Stop')) return;
     S.sheets.pop();
-    await del('budget_entries', { id: s.id });
-    if (d.applyLater) for (const e of later) await del('budget_entries', { id: e.id });
+    await endRuleBefore(r, s.draft.month);
   },
-  bCopy: async (el) => {
-    const from = el.dataset.from, to = bMonth();
-    const rows = bEntries(from).map((e) => ({ ...e, id: uid(), month: to, included: true, created_by: S.me, created_at: new Date().toISOString() }));
-    if (!rows.length) return;
-    await ins('budget_entries', rows);
-    toast(`Copied ${rows.length} items from ${monthLabel(from)}`);
+  bDeleteRule: async () => {
+    const s = topSheet(), r = bRule(s.ruleId);
+    if (!await ask(`Delete “${r.name}” from every month, including past ones?`, 'Delete', true)) return;
+    S.sheets.pop();
+    applyLocal('budget_entries', 'remove', { rule_id: r.id });
+    await del('budget_recurring', { id: r.id });
+  },
+  bDeleteEntry: async () => {
+    const s = topSheet();
+    if (!await ask(`Delete “${s.draft.name}” from ${monthLabel(s.draft.month)}?`, 'Delete', true)) return;
+    S.sheets.pop();
+    await del('budget_entries', { id: s.entryId });
   },
   bPot: (el) => {
     const p = el.dataset?.id ? bPot(el.dataset.id) : null;
@@ -2636,7 +2821,7 @@ Object.assign(A, {
   bPotSave: async () => {
     const s = topSheet(), d = s.draft;
     if (!d.name.trim()) return;
-    const num = (v) => { const x = parseFloat(String(v).replace(/[£,\s]/g, '')); return isNaN(x) ? null : n2(x); };
+    const num = (v) => { const x = parseAmt(v); return isNaN(x) ? null : n2(x); };
     const row = { name: d.name.trim(), opening: num(d.opening) || 0, target: num(d.target), colour: d.colour };
     S.sheets.pop();
     if (s.id) await upd('budget_pots', { id: s.id }, row);
@@ -2649,16 +2834,31 @@ Object.assign(A, {
   },
   bPotDelete: async () => {
     const s = topSheet();
-    if (!await ask('Delete this pot? Savings items stay but won’t be linked to a pot.', 'Delete', true)) return;
+    if (!await ask('Delete this pot? Savings stay but won’t be linked to a pot.', 'Delete', true)) return;
     S.sheets.pop();
     await del('budget_pots', { id: s.id });
   },
 });
+async function endRuleBefore(r, month) {
+  if (monthKey(parseYmd(r.start_date)) >= month) {
+    applyLocal('budget_entries', 'remove', { rule_id: r.id });
+    return del('budget_recurring', { id: r.id });
+  }
+  for (const e of S.data.budget_entries.filter((x) => x.rule_id === r.id && x.month >= month)) await del('budget_entries', { id: e.id });
+  return upd('budget_recurring', { id: r.id }, { end_date: dayBefore(month) });
+}
 Object.assign(CHANGE, {
   bField: (el) => {
     const d = topSheet().draft;
     if (el.dataset.f === 'pot_id' && el.value === '__new') { d.pickingPot = true; renderSheets(true); A.bPot({ dataset: {} }); return; }
     d[el.dataset.f] = el.value;
+    if (el.dataset.f === 'freq' && d.freq === 'monthly' && (d.day === '' || d.day == null)) d.day = 1;
+    renderSheets(true);
+  },
+  bOvAmount: async (el) => {
+    const s = topSheet(), r = bRule(s.ruleId);
+    const v = parseAmt(el.value);
+    await setOverride(r, s.draft.month, isNaN(v) || el.value.trim() === '' ? { custom_amount: false, amount: 0 } : { custom_amount: true, amount: n2(v) });
     renderSheets(true);
   },
   bAccName: (el) => { const v = el.value.trim(); if (v) upd('budget_accounts', { id: el.dataset.id }, { name: v }); },
@@ -2666,7 +2866,7 @@ Object.assign(CHANGE, {
 Object.assign(INPUT, {
   bText: (el) => {
     const d = topSheet().draft; d[el.dataset.f] = el.value;
-    const ok = d.name.trim() && d.amount !== '' && !isNaN(parseFloat(String(d.amount).replace(/[£,\s]/g, '').replace('−', '-')));
+    const ok = d.name.trim() && d.amount !== '' && !isNaN(parseAmt(d.amount));
     const b = $('[data-a="bSave"]'); if (b) { b.disabled = !ok; b.style.opacity = ok ? 1 : 0.4; }
   },
   bPotText: (el) => {
@@ -2684,9 +2884,8 @@ Object.assign(ENTER, {
 
 /* Demo-only example budget (never used with the real database) */
 function seedBudget() {
-  const mk = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-  const now = new Date();
-  const months = [-2, -1, 0].map((n) => mk(new Date(now.getFullYear(), now.getMonth() + n, 1)));
+  const d = new Date();
+  const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`.replace(/^(\d+)-(\d+)/, (_, y, m) => { const x = new Date(+y, +m - 3, 1); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`; });
   const id = () => uid();
   const joint = id(), mike = id(), lou = id();
   const holiday = id(), rainy = id(), xmas = id();
@@ -2700,31 +2899,35 @@ function seedBudget() {
     { id: rainy, name: 'Rainy day', colour: '#00A5A8', target: null, opening: 2400, sort: 2 },
     { id: xmas, name: 'Christmas', colour: '#E0352B', target: 600, opening: 200, sort: 3 },
   ];
-  const template = [
-    ['in', 'Mike salary', 2900, mike, null, null, null, 28],
-    ['in', 'Louise salary', 2100, lou, null, null, null, 25],
-    ['in', 'Child benefit', 176, joint, null, null, null, 15],
-    ['transfer', 'Mike → joint', 1700, mike, joint, null, null, 28],
-    ['transfer', 'Louise → joint', 1300, lou, joint, null, null, 25],
-    ['out', 'Mortgage', 1150, joint, null, null, 'Mortgage / rent', 1],
-    ['out', 'Council tax', 210, joint, null, null, 'Council tax', 1],
-    ['out', 'Energy', 165, joint, null, null, 'Energy', 5],
-    ['out', 'Broadband & TV', 72, joint, null, null, 'Phone & broadband', 12],
-    ['out', 'Food shopping', 650, joint, null, null, 'Food shopping', null],
-    ['out', 'Streaming', 28, joint, null, null, 'Subscriptions', 9],
-    ['out', 'Football club', 35, joint, null, null, 'Clubs & activities', 3],
-    ['out', 'Phone', 22, mike, null, null, 'Phone & broadband', 20],
-    ['out', 'Gym', 30, lou, null, null, 'Subscriptions', 2],
-    ['save', 'Holiday fund', 250, joint, null, holiday, null, 2],
-    ['save', 'Rainy day', 150, joint, null, rainy, null, 2],
-    ['save', 'Christmas', 100, joint, null, xmas, null, 2],
+  const endNext = (() => { const x = new Date(d.getFullYear(), d.getMonth() + 7, 0); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; })();
+  const R = (kind, name, amount, account_id, extra) => ({ id: uid(), kind, name, amount, account_id, to_account_id: null, pot_id: null, category: null, freq: 'monthly', day: 1, weekday: null, start_date: start, end_date: null, note: null, created_by: 'mike', ...extra });
+  const rules = [
+    R('in', 'Mike salary', 2900, mike, { day: 28 }),
+    R('in', 'Louise salary', 2100, lou, { day: 25 }),
+    R('in', 'Child benefit', 44, joint, { freq: 'weekly', day: null, weekday: 1 }),
+    R('transfer', 'Mike → joint', 1700, mike, { to_account_id: joint, day: 28 }),
+    R('transfer', 'Louise → joint', 1300, lou, { to_account_id: joint, day: 25 }),
+    R('transfer', 'Spending money', 75, joint, { to_account_id: lou, freq: 'weekly', day: null, weekday: 5 }),
+    R('out', 'Mortgage', 1150, joint, { category: 'Mortgage / rent' }),
+    R('out', 'Council tax', 210, joint, { category: 'Council tax' }),
+    R('out', 'Energy', 165, joint, { category: 'Energy', day: 5 }),
+    R('out', 'Broadband & TV', 72, joint, { category: 'Phone & broadband', day: 12 }),
+    R('out', 'Car finance', 245, joint, { category: 'Car', day: 15, end_date: endNext }),
+    R('out', 'Big shop', 120, joint, { category: 'Food shopping', freq: 'weekly', day: null, weekday: 6 }),
+    R('out', 'Pocket money', 10, joint, { category: 'Pocket money', freq: 'weekly', day: null, weekday: 5 }),
+    R('out', 'Streaming', 28, joint, { category: 'Subscriptions', day: 9 }),
+    R('out', 'Football club', 35, joint, { category: 'Clubs & activities', day: 3 }),
+    R('out', 'Car insurance', 540, joint, { category: 'Insurance', freq: 'yearly', day: null, start_date: `${start.slice(0, 7)}-20` }),
+    R('save', 'Holiday fund', 250, joint, { pot_id: holiday, day: 2 }),
+    R('save', 'Rainy day', 150, joint, { pot_id: rainy, day: 2 }),
+    R('save', 'Christmas', 25, joint, { pot_id: xmas, freq: 'weekly', day: null, weekday: 5 }),
   ];
-  const series = template.map(() => uid());
-  const entries = [];
-  months.forEach((month) => template.forEach(([kind, name, amount, account_id, to_account_id, pot_id, category, day], i) => {
-    entries.push({ id: uid(), series: series[i], month, kind, name, amount, account_id, to_account_id, pot_id, category, day, included: !(name === 'Streaming' && month === months[2]), note: null, created_by: 'mike' });
-  }));
-  return { budget_accounts: accounts, budget_pots: pots, budget_entries: entries };
+  const cur = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  const entries = [
+    { id: uid(), rule_id: null, month: cur, kind: 'out', name: 'School trip', amount: 45, account_id: joint, category: 'Kids', day: 18, included: true, custom_amount: false },
+    { id: uid(), rule_id: rules.find((r) => r.name === 'Streaming').id, month: cur, kind: 'out', name: 'Streaming', amount: 0, account_id: joint, included: false, custom_amount: false },
+  ];
+  return { budget_accounts: accounts, budget_pots: pots, budget_recurring: rules, budget_entries: entries };
 }
 
 Object.assign(A, {

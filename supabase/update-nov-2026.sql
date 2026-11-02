@@ -158,21 +158,48 @@ create table if not exists budget_entries (
 );
 create index if not exists budget_entries_month on budget_entries(month);
 
+-- Regular payments: set once, they fill every month they apply to
+create table if not exists budget_recurring (
+  id            uuid primary key default gen_random_uuid(),
+  kind          text not null check (kind in ('in','out','save','transfer')),
+  name          text not null,
+  amount        numeric(12,2) not null default 0,
+  account_id    uuid references budget_accounts(id) on delete cascade,
+  to_account_id uuid references budget_accounts(id) on delete set null,
+  pot_id        uuid references budget_pots(id) on delete set null,
+  category      text,
+  freq          text not null default 'monthly' check (freq in ('weekly','fortnightly','4weekly','monthly','yearly')),
+  day           smallint check (day between 0 and 31),
+  weekday       smallint check (weekday between 0 and 6),
+  start_date    date not null default current_date,
+  end_date      date,
+  note          text,
+  created_by    text default me() references members(id),
+  created_at    timestamptz not null default now()
+);
+-- A row here with rule_id set = a one-month change to a regular payment
+alter table budget_entries add column if not exists rule_id uuid references budget_recurring(id) on delete cascade;
+alter table budget_entries add column if not exists custom_amount boolean not null default false;
+create index if not exists budget_entries_rule on budget_entries(rule_id);
+
 alter table budget_accounts enable row level security;
 alter table budget_pots     enable row level security;
 alter table budget_entries  enable row level security;
+alter table budget_recurring enable row level security;
 drop policy if exists "budget accounts" on budget_accounts;
 drop policy if exists "budget pots"     on budget_pots;
 drop policy if exists "budget entries"  on budget_entries;
 create policy "budget accounts" on budget_accounts for all using (can_budget()) with check (can_budget());
 create policy "budget pots"     on budget_pots     for all using (can_budget()) with check (can_budget());
 create policy "budget entries"  on budget_entries  for all using (can_budget()) with check (can_budget());
+drop policy if exists "budget recurring" on budget_recurring;
+create policy "budget recurring" on budget_recurring for all using (can_budget()) with check (can_budget());
 
 -- ---------- 5. Live updates for the new tables ----------
 do $$
 declare t text;
 begin
-  foreach t in array array['gift_status','countdowns','budget_accounts','budget_pots','budget_entries'] loop
+  foreach t in array array['gift_status','countdowns','budget_accounts','budget_pots','budget_entries','budget_recurring'] loop
     begin
       execute format('alter publication supabase_realtime add table %I', t);
     exception when duplicate_object then null;
