@@ -635,3 +635,7 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 .b-amt-wrap { display: flex; flex-direction: column; align-items: flex-end; flex: none; gap: 2px; }
 .b-amt-wrap small { font-size: 11px; color: var(--label2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .b-row .row-meta .pill { white-space: nowrap; }
+.b-sort { display: flex; align-items: center; gap: 10px; margin: 22px 0 -8px; }
+.b-sort > span { font-size: 13px; color: var(--label2); text-transform: uppercase; letter-spacing: .03em; flex: none; }
+.b-sort .seg { flex: 1; }
+.b-sort .seg button { font-size: 13px; padding: 6px 4px; }
