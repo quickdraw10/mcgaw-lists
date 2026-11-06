@@ -182,10 +182,28 @@ alter table budget_entries add column if not exists rule_id uuid references budg
 alter table budget_entries add column if not exists custom_amount boolean not null default false;
 create index if not exists budget_entries_rule on budget_entries(rule_id);
 
+-- Bank statement transactions (imported from downloaded statement files)
+create table if not exists budget_transactions (
+  id           uuid primary key default gen_random_uuid(),
+  account_id   uuid not null references budget_accounts(id) on delete cascade,
+  date         date not null,
+  amount       numeric(12,2) not null,
+  description  text not null default '',
+  fingerprint  text not null unique,
+  batch_id     uuid,
+  matched_rule uuid references budget_recurring(id) on delete set null,
+  ignored      boolean not null default false,
+  note         text,
+  created_by   text default me() references members(id),
+  created_at   timestamptz not null default now()
+);
+create index if not exists budget_transactions_acc_date on budget_transactions(account_id, date);
+
 alter table budget_accounts enable row level security;
 alter table budget_pots     enable row level security;
 alter table budget_entries  enable row level security;
 alter table budget_recurring enable row level security;
+alter table budget_transactions enable row level security;
 drop policy if exists "budget accounts" on budget_accounts;
 drop policy if exists "budget pots"     on budget_pots;
 drop policy if exists "budget entries"  on budget_entries;
@@ -194,12 +212,14 @@ create policy "budget pots"     on budget_pots     for all using (can_budget()) 
 create policy "budget entries"  on budget_entries  for all using (can_budget()) with check (can_budget());
 drop policy if exists "budget recurring" on budget_recurring;
 create policy "budget recurring" on budget_recurring for all using (can_budget()) with check (can_budget());
+drop policy if exists "budget transactions" on budget_transactions;
+create policy "budget transactions" on budget_transactions for all using (can_budget()) with check (can_budget());
 
 -- ---------- 5. Live updates for the new tables ----------
 do $$
 declare t text;
 begin
-  foreach t in array array['gift_status','countdowns','budget_accounts','budget_pots','budget_entries','budget_recurring'] loop
+  foreach t in array array['gift_status','countdowns','budget_accounts','budget_pots','budget_entries','budget_recurring','budget_transactions'] loop
     begin
       execute format('alter publication supabase_realtime add table %I', t);
     exception when duplicate_object then null;

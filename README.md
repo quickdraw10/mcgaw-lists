@@ -101,3 +101,4 @@ Run `supabase/update-nov-2026.sql` once in Supabase → SQL Editor, then redeplo
 
 - **Budget — regular payments:** set up once (every week / 2 weeks / 4 weeks / month / year, on a weekday or day of the month, ongoing or until a date) and they fill every month. Change one month only, or change from a month onwards — earlier months keep their figures.
 - **Work lists on the home screen** show how many urgent/important tasks are overdue, due today, tomorrow and later this week.
+- **Statement import:** Budget → Import a statement. Reads CSV (HSBC, Barclays, Lloyds/Halifax, Atom, Amex and most others), OFX, QIF and Santander text files on the phone; saves date, description and amount only. Matches transactions to regular payments (✓ Paid / Paid £x / Not seen), shows actual in/out and anything not in the budget, and spots payments that look regular.
