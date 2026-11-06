@@ -2924,7 +2924,7 @@ function parseMoney(raw) {
   let neg = false;
   if (/^\(.*\)$/.test(t)) { neg = true; t = t.slice(1, -1); }
   if (/\bDR\b/i.test(t)) neg = true;
-  t = t.replace(/\b(CR|DR|GBP)\b/gi, '').replace(/[£$€,\s]|�/g, '').replace('−', '-');
+  t = t.replace(/\b(CR|DR|GBP)\b/gi, '').replace(/[£$€,\s]|\uFFFD/g, '').replace('−', '-');
   if (!/^[-+]?\d*\.?\d+$/.test(t)) return null;
   const v = parseFloat(t);
   return neg ? -Math.abs(v) : v;
@@ -3016,7 +3016,7 @@ function parseStatement(text) {
 }
 function readFileText(file) {
   const read = (enc) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsText(file, enc); });
-  return read('utf-8').then((t) => (t.includes('�') ? read('windows-1252') : t));
+  return read('utf-8').then((t) => (t.includes('\uFFFD') ? read('windows-1252') : t));
 }
 
 /* ---------- matching ---------- */
