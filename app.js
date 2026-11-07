@@ -2356,7 +2356,7 @@ function countdownSheet(s) {
   const canDel = c && (c.owner === S.me || (c.list_id && getList(c.list_id) && isAdmin(getList(c.list_id))));
   const others = membersSorted().filter((m) => m.id !== (c ? c.owner : S.me));
   const ok = d.title.trim() && d.date;
-  return head(c ? 'Countdown' : 'New countdown', c && canDel ? '<button class="txt danger" data-a="deleteCd">Delete</button>' : undefined, `<button class="txt r" data-a="saveCd" ${ok ? '' : 'disabled style="opacity:.4"'}>${c ? 'Save' : 'Add'}</button>`) + `
+  return head(c ? 'Countdown' : 'New countdown', '<button class="txt back" data-a="closeSheet" aria-label="Back without saving">‹ Back</button>', `<button class="txt r" data-a="saveCd" ${ok ? '' : 'disabled style="opacity:.4"'}>${c ? 'Save' : 'Add'}</button>`) + `
     <div class="section-label" style="margin-top:4px">Name</div>
     <input class="big-input" id="cd-title" value="${esc(d.title)}" placeholder="e.g. Lapland trip, Esme’s birthday" data-input="cdField" data-f="title" autocomplete="off">
     <div class="group" style="margin-top:12px">
@@ -2371,7 +2371,8 @@ function countdownSheet(s) {
     <div class="section-label">Who can see it</div>
     ${l ? `<p class="hint" style="margin:0 4px 8px">Everyone on “${esc(l.title)}” can see it. Add anyone else below.</p>` : ''}
     <div class="group" style="padding:12px 10px"><div class="who">${others.map((m) => `<button class="${d.members.includes(m.id) ? 'on' : ''}" data-a="cdMember" data-m="${m.id}">${avatar(m.id, 46)}${esc(m.name)}</button>`).join('')}</div></div>
-    <p class="hint">Shows on the home screen${l ? ' and at the top of the list' : ''} for everyone who can see it.</p>`;
+    <p class="hint">Shows on the home screen${l ? ' and at the top of the list' : ''} for everyone who can see it.</p>
+    ${c && canDel ? '<button class="btn danger" style="margin-top:18px" data-a="deleteCd">Delete countdown</button>' : ''}`;
 }
 Object.assign(A, {
   newCd: (el) => {

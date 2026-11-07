@@ -1,5 +1,5 @@
 // McGaw Lists service worker: offline shell + push notifications
-const CACHE = 'mcgaw-lists-v15';
+const CACHE = 'mcgaw-lists-v16';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

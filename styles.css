@@ -652,3 +652,5 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 .sort-row { display: flex; align-items: center; gap: 10px; margin: 10px 2px 0; font-size: 13px; }
 .sort-row .seg { flex: 1; margin: 0; }
 .sort-row .seg button { font-size: 13px; padding: 5px 4px; }
+
+.sheet-head .txt.back { font-weight: 500; }
