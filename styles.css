@@ -648,3 +648,7 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 .b-actual b.warn { color: var(--orange); }
 .b-import { padding: 11px; font-size: 15px; }
 .field label small { font-size: 12px; font-weight: 400; }
+
+.sort-row { display: flex; align-items: center; gap: 10px; margin: 10px 2px 0; font-size: 13px; }
+.sort-row .seg { flex: 1; margin: 0; }
+.sort-row .seg button { font-size: 13px; padding: 5px 4px; }

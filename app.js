@@ -849,7 +849,7 @@ function itemRow(it, l, opts = {}) {
   if (['todo', 'work'].includes(l.type)) { const pp = priPill(it); if (pp) meta.push(pp); }
   if (it.due) meta.push(`<span class="pill ${!it.done && it.due < today() ? 'red' : it.due === today() ? 'orange' : ''}">${fmtDue(it.due)}</span>`);
   if (it.quantity) meta.push(`<span class="pill">${l.type === 'packing' && /^\d+$/.test(it.quantity) ? '×' + esc(it.quantity) : esc(it.quantity)}</span>`);
-  if (l.type === 'work' && it.status && !opts.context) meta.push(`<span class="pill ${it.status === 'doing' ? 'blue' : it.status === 'done' ? 'green' : ''}">${WORK_STATUS[it.status]}</span>`);
+  if (l.type === 'work' && it.status === 'doing' && !opts.context) meta.push(`<span class="pill blue">Doing</span>`);
   let gift = null;
   if (l.type === 'christmas' && !it.parent_id) {
     if (isMyWish(it)) meta.push('<span class="pill">On your list</span>');
@@ -912,14 +912,15 @@ function todoView(l) {
   return quickAdd(l, 'New task') + mineToggle(l) + body + doneSection(l, done, 'Completed');
 }
 
-function priorityGroups(rows, l) {
+function priorityGroups(rows, l, sort = 'order') {
   const used = PRI_ORDER.filter((p) => rows.some((i) => priOf(i) === p));
+  const byDue = (a, b) => (a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : a.position - b.position;
   let html = '';
   for (const p of used) {
-    const g = rows.filter((i) => priOf(i) === p).sort((a, b) => a.position - b.position);
+    const g = rows.filter((i) => priOf(i) === p).sort(sort === 'due' ? byDue : (a, b) => a.position - b.position);
     const info = PRIORITY.find((x) => x.v === p);
     const label = p ? info.label : used.length > 1 ? 'Everything else' : '';
-    html += `${label ? `<div class="section-label"><span class="pri-label ${info.cls || ''}">${label}</span><span class="muted">${g.length}</span></div>` : '<div style="height:14px"></div>'}<div class="group" data-reorder>${g.map((i) => itemRow(i, l)).join('')}</div>`;
+    html += `${label ? `<div class="section-label"><span class="pri-label ${info.cls || ''}">${label}</span><span class="muted">${g.length}</span></div>` : '<div style="height:14px"></div>'}<div class="group"${sort === 'due' ? '' : ' data-reorder'}>${g.map((i) => itemRow(i, l)).join('')}</div>`;
   }
   return html;
 }
@@ -928,13 +929,17 @@ function priorityGroups(rows, l) {
 function workView(l) {
   let items = itemsOf(l.id);
   if (ui('mine-' + l.id, false)) items = items.filter((i) => i.assignees.includes(S.me));
-  const st = ui('ws-' + l.id, 'todo');
-  const count = (s) => items.filter((i) => (i.status || 'todo') === s).length;
-  const rows = items.filter((i) => (i.status || 'todo') === st);
-  const seg = `<div class="seg" style="margin:12px 0 0">${Object.entries(WORK_STATUS).map(([k, v]) => `<button class="${st === k ? 'on' : ''}" data-a="setUi" data-k="ws-${l.id}" data-v="${k}">${v} · ${count(k)}</button>`).join('')}</div>`;
-  const list = rows.length ? priorityGroups(rows.slice(0, st === 'done' ? 40 : 999), l) : `<div class="empty">${st === 'done' ? 'Nothing finished yet.' : st === 'doing' ? 'Nothing in progress. Open a task and set it to Doing.' : 'No tasks waiting. Add one above.'}</div>`;
+  let st = ui('ws-' + l.id, 'active');
+  if (st !== 'done') st = 'active';
+  const isDone = (i) => i.status === 'done';
+  const active = items.filter((i) => !isDone(i)), done = items.filter(isDone);
+  const rows = st === 'done' ? done : active;
+  const sort = pref('workSort', 'order');
+  const seg = `<div class="seg" style="margin:12px 0 0"><button class="${st === 'active' ? 'on' : ''}" data-a="setUi" data-k="ws-${l.id}" data-v="active">Active · ${active.length}</button><button class="${st === 'done' ? 'on' : ''}" data-a="setUi" data-k="ws-${l.id}" data-v="done">Done · ${done.length}</button></div>`;
+  const sortBar = st === 'active' && active.length > 1 ? `<div class="sort-row"><span class="muted">Sort</span><div class="seg small"><button class="${sort === 'order' ? 'on' : ''}" data-a="setWorkSort" data-v="order">My order</button><button class="${sort === 'due' ? 'on' : ''}" data-a="setWorkSort" data-v="due">Due date</button></div></div>` : '';
+  const list = rows.length ? priorityGroups(rows.slice(0, st === 'done' ? 40 : 999), l, st === 'active' ? sort : 'order') : `<div class="empty">${st === 'done' ? 'Nothing finished yet.' : 'Nothing to do. Add a task above.'}</div>`;
   const clear = st === 'done' && rows.length && isAdmin(l) ? `<button class="link-btn" data-a="clearDone" data-id="${l.id}">Clear finished tasks</button>` : '';
-  return quickAdd(l, 'New work task') + seg + list + clear + (listMembers(l).length > 1 ? mineToggle(l) : '');
+  return quickAdd(l, 'New work task') + seg + sortBar + list + clear + (listMembers(l).length > 1 ? mineToggle(l) : '');
 }
 
 /* ---------- Christmas ---------- */
@@ -1523,6 +1528,7 @@ const A = {
   go: (el) => { if (S.sheets.length) { S.sheets = []; } go(el.dataset.h); },
   filter: (el) => { S.filter = el.dataset.k; render(); },
   toggleUi: (el) => { S.ui[el.dataset.k] = !ui(el.dataset.k, el.dataset.k.startsWith('showDone') ? getList(el.dataset.k.slice(9))?.type === 'shopping' : false); render(); },
+  setWorkSort: (el) => { setPref('workSort', el.dataset.v); render(); },
   setUi: (el) => { const v = el.dataset.v; S.ui[el.dataset.k] = v === '1' ? true : v === '0' ? false : v; render(); const q = document.querySelector('.quick input'); if (q && el.dataset.k.match(/^(for|bag)-/)) q.focus(); },
   closeSheet: () => closeSheet(),
   noticeTile: () => { const l = S.data.lists.find((x) => x.type === 'notice'); l ? go('#/list/' + l.id) : A.newList({ dataset: { type: 'notice' } }); },
@@ -1964,7 +1970,7 @@ const ENTER = {
       const p = parsePackQty(raw);
       return ins('items', newItem(l, p.text, { quantity: p.qty || null, data: { bag: b }, assignees: b === 'shared' ? [] : [b] }));
     }
-    if (l.type === 'work') return ins('items', newItem(l, raw, { status: ui('ws-' + l.id, 'todo') === 'doing' ? 'doing' : 'todo', assignees: [S.me] }));
+    if (l.type === 'work') return ins('items', newItem(l, raw, { status: 'todo', assignees: [S.me] }));
     if (l.type === 'notice') return;
     const solo = listMembers(l).length === 1;
     return ins('items', newItem(l, raw, { assignees: solo ? [S.me] : [] }));

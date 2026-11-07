@@ -12,7 +12,7 @@ Same building blocks as Vouch: **GitHub Pages** hosts the app, **Supabase** stor
 |---|---|
 | **Shopping** | Type “2 milk” or “500g mince” — it works out the quantity and sorts by aisle. Tick into “In the trolley”, then Clear. |
 | **To do** | Overdue / Today / Coming up / Any time. Due dates, “Important” flag, sub-tasks, assign to 1, 2 or everyone. “Just mine” filter. |
-| **Work** | To do → Doing → Done tabs, priority first. Sub-tasks and due dates. |
+| **Work** | Active (to do + doing, with a “Doing” tag) and Done tabs, grouped by priority. Sort by your own order or by due date. Sub-tasks and due dates. |
 | **Christmas** | Gifts grouped by who they're for, with price, link and Idea → Bought → Wrapped. Total planned and spent. **Keep secret from** hides a gift from someone even on a shared list (done automatically when you add a gift for someone on the list). |
 | **Travel packing** | A bag per person plus a Shared bag, progress bars, one-tap “essentials” starter list, “Unpack everything” to reuse next trip. |
 | **Meal planner** | Dinner each night by default (breakfast and lunch can be shown with one tap at the bottom, or in list options), who's cooking, and tap each face for **home → out → late → not sure** with a head-count. Ingredients go straight to a shopping list. |
