@@ -1,0 +1,1041 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "family lists",
+      "intents": [
+        {
+          "name": "AddItemIntent",
+          "slots": [
+            {
+              "name": "Item",
+              "type": "ITEM"
+            },
+            {
+              "name": "ListName",
+              "type": "LIST_NAME"
+            }
+          ],
+          "samples": [
+            "add {Item}",
+            "add {Item} to {ListName}",
+            "add {Item} to the {ListName}",
+            "add {Item} to my {ListName}",
+            "add {Item} to our {ListName}",
+            "put {Item} on {ListName}",
+            "put {Item} on the {ListName}",
+            "put {Item} on my {ListName}",
+            "stick {Item} on the {ListName}",
+            "we need {Item}",
+            "we're out of {Item}",
+            "we've run out of {Item}",
+            "I need {Item}",
+            "we need some {Item}",
+            "get {Item}",
+            "buy {Item}"
+          ]
+        },
+        {
+          "name": "TickItemIntent",
+          "slots": [
+            {
+              "name": "Item",
+              "type": "ITEM"
+            },
+            {
+              "name": "ListName",
+              "type": "LIST_NAME"
+            }
+          ],
+          "samples": [
+            "tick off {Item}",
+            "tick {Item}",
+            "cross off {Item}",
+            "cross {Item} off",
+            "remove {Item}",
+            "take off {Item}",
+            "remove {Item} from {ListName}",
+            "remove {Item} from the {ListName}",
+            "remove {Item} from my {ListName}",
+            "tick off {Item} on the {ListName}",
+            "I've got {Item}",
+            "we've got {Item}",
+            "got {Item}",
+            "mark {Item} as done",
+            "I've done {Item}",
+            "{Item} is done",
+            "I've finished {Item}"
+          ]
+        },
+        {
+          "name": "ReadListIntent",
+          "slots": [
+            {
+              "name": "ListName",
+              "type": "LIST_NAME"
+            }
+          ],
+          "samples": [
+            "what's on {ListName}",
+            "what's on the {ListName}",
+            "what's on my {ListName}",
+            "what's on our {ListName}",
+            "read {ListName}",
+            "read the {ListName}",
+            "read my {ListName}",
+            "read out the {ListName}",
+            "show {ListName}",
+            "show the {ListName}",
+            "show me the {ListName}",
+            "show my {ListName}",
+            "open the {ListName}",
+            "open {ListName}",
+            "what do we need",
+            "what do we need from the shop",
+            "what's on the list",
+            "read the list",
+            "show the list"
+          ]
+        },
+        {
+          "name": "DinnerIntent",
+          "slots": [
+            {
+              "name": "Day",
+              "type": "AMAZON.DATE"
+            }
+          ],
+          "samples": [
+            "what's for dinner",
+            "what's for dinner {Day}",
+            "what's for tea",
+            "what's for tea {Day}",
+            "what are we having for dinner",
+            "what are we having for dinner {Day}",
+            "what are we having {Day}",
+            "what's for dinner on {Day}",
+            "what's cooking tonight",
+            "who's cooking",
+            "who's cooking {Day}",
+            "what are we eating tonight"
+          ]
+        },
+        {
+          "name": "WeekMealsIntent",
+          "samples": [
+            "what's on the meal plan",
+            "show the meal plan",
+            "show the meal planner",
+            "what are we having this week",
+            "what's for dinner this week",
+            "meals this week",
+            "show this week's meals",
+            "what's on the menu this week"
+          ],
+          "slots": []
+        },
+        {
+          "name": "SetDinnerIntent",
+          "slots": [
+            {
+              "name": "Meal",
+              "type": "MEAL"
+            },
+            {
+              "name": "Day",
+              "type": "AMAZON.DATE"
+            }
+          ],
+          "samples": [
+            "we're having {Meal} for dinner",
+            "we're having {Meal} for dinner {Day}",
+            "we're having {Meal} for tea",
+            "we're having {Meal} for tea {Day}",
+            "we're having {Meal} {Day}",
+            "put {Meal} on the meal plan",
+            "put {Meal} on the meal plan for {Day}",
+            "plan {Meal} for {Day}",
+            "dinner {Day} is {Meal}",
+            "dinner is {Meal}",
+            "tea {Day} is {Meal}"
+          ]
+        },
+        {
+          "name": "PresenceIntent",
+          "slots": [
+            {
+              "name": "Status",
+              "type": "STATUS"
+            },
+            {
+              "name": "Day",
+              "type": "AMAZON.DATE"
+            }
+          ],
+          "samples": [
+            "I'm {Status} for dinner",
+            "I'm {Status} for dinner {Day}",
+            "I'll be {Status} for dinner",
+            "I'll be {Status} for dinner {Day}",
+            "I'm {Status} for tea",
+            "I'm {Status} for tea {Day}",
+            "I'll be {Status} for tea {Day}",
+            "I'm {Status} {Day}",
+            "I'll be {Status} {Day}",
+            "mark me as {Status} for dinner",
+            "mark me as {Status} {Day}"
+          ]
+        },
+        {
+          "name": "MyTasksIntent",
+          "samples": [
+            "what are my tasks",
+            "what have I got to do",
+            "what have I got on",
+            "what's due",
+            "what's due today",
+            "what's due this week",
+            "what's overdue",
+            "what's urgent",
+            "show my tasks",
+            "what's on my plate",
+            "my tasks",
+            "what do I need to do",
+            "what jobs have I got"
+          ],
+          "slots": []
+        },
+        {
+          "name": "CountdownIntent",
+          "slots": [
+            {
+              "name": "Countdown",
+              "type": "COUNTDOWN"
+            }
+          ],
+          "samples": [
+            "how long until {Countdown}",
+            "how long till {Countdown}",
+            "how long is it until {Countdown}",
+            "how many days until {Countdown}",
+            "how many days till {Countdown}",
+            "how many sleeps until {Countdown}",
+            "how many sleeps till {Countdown}",
+            "countdown to {Countdown}",
+            "show the countdown to {Countdown}",
+            "show the countdown for {Countdown}",
+            "show the countdown",
+            "show the countdowns",
+            "show countdowns",
+            "what's the next countdown",
+            "how long to go"
+          ]
+        },
+        {
+          "name": "NoticeIntent",
+          "samples": [
+            "read the notice board",
+            "what's on the notice board",
+            "show the notice board",
+            "any notes",
+            "any notices",
+            "are there any notes",
+            "read the notes"
+          ],
+          "slots": []
+        },
+        {
+          "name": "TodayIntent",
+          "samples": [
+            "what's on today",
+            "what's happening today",
+            "give me a summary",
+            "what's the plan today",
+            "what's the plan",
+            "show today",
+            "today",
+            "daily summary",
+            "the summary",
+            "morning summary",
+            "show me everything"
+          ],
+          "slots": []
+        },
+        {
+          "name": "LinkVoiceIntent",
+          "slots": [
+            {
+              "name": "Code",
+              "type": "AMAZON.FOUR_DIGIT_NUMBER"
+            }
+          ],
+          "samples": [
+            "my code is {Code}",
+            "the code is {Code}",
+            "code {Code}",
+            "link my voice with {Code}",
+            "link my voice with code {Code}",
+            "my link code is {Code}"
+          ]
+        },
+        {
+          "name": "WhoAmIIntent",
+          "samples": [
+            "who am I",
+            "who do you think I am",
+            "do you know who I am",
+            "do you know my voice",
+            "who's speaking"
+          ],
+          "slots": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": [],
+          "slots": []
+        },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": [],
+          "slots": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": [],
+          "slots": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": [],
+          "slots": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": [],
+          "slots": []
+        }
+      ],
+      "types": [
+        {
+          "name": "ITEM",
+          "values": [
+            {
+              "name": {
+                "value": "milk"
+              }
+            },
+            {
+              "name": {
+                "value": "bread"
+              }
+            },
+            {
+              "name": {
+                "value": "eggs"
+              }
+            },
+            {
+              "name": {
+                "value": "butter"
+              }
+            },
+            {
+              "name": {
+                "value": "cheese"
+              }
+            },
+            {
+              "name": {
+                "value": "bananas"
+              }
+            },
+            {
+              "name": {
+                "value": "apples"
+              }
+            },
+            {
+              "name": {
+                "value": "tomatoes"
+              }
+            },
+            {
+              "name": {
+                "value": "potatoes"
+              }
+            },
+            {
+              "name": {
+                "value": "onions"
+              }
+            },
+            {
+              "name": {
+                "value": "carrots"
+              }
+            },
+            {
+              "name": {
+                "value": "chicken"
+              }
+            },
+            {
+              "name": {
+                "value": "mince"
+              }
+            },
+            {
+              "name": {
+                "value": "bacon"
+              }
+            },
+            {
+              "name": {
+                "value": "sausages"
+              }
+            },
+            {
+              "name": {
+                "value": "pasta"
+              }
+            },
+            {
+              "name": {
+                "value": "rice"
+              }
+            },
+            {
+              "name": {
+                "value": "cereal"
+              }
+            },
+            {
+              "name": {
+                "value": "coffee"
+              }
+            },
+            {
+              "name": {
+                "value": "tea bags"
+              }
+            },
+            {
+              "name": {
+                "value": "orange juice"
+              }
+            },
+            {
+              "name": {
+                "value": "yoghurts"
+              }
+            },
+            {
+              "name": {
+                "value": "crisps"
+              }
+            },
+            {
+              "name": {
+                "value": "biscuits"
+              }
+            },
+            {
+              "name": {
+                "value": "chocolate"
+              }
+            },
+            {
+              "name": {
+                "value": "toilet roll"
+              }
+            },
+            {
+              "name": {
+                "value": "kitchen roll"
+              }
+            },
+            {
+              "name": {
+                "value": "bin bags"
+              }
+            },
+            {
+              "name": {
+                "value": "washing up liquid"
+              }
+            },
+            {
+              "name": {
+                "value": "dishwasher tablets"
+              }
+            },
+            {
+              "name": {
+                "value": "washing powder"
+              }
+            },
+            {
+              "name": {
+                "value": "toothpaste"
+              }
+            },
+            {
+              "name": {
+                "value": "shampoo"
+              }
+            },
+            {
+              "name": {
+                "value": "nappies"
+              }
+            },
+            {
+              "name": {
+                "value": "dog food"
+              }
+            },
+            {
+              "name": {
+                "value": "cat food"
+              }
+            },
+            {
+              "name": {
+                "value": "sliced bread"
+              }
+            },
+            {
+              "name": {
+                "value": "semi skimmed milk"
+              }
+            },
+            {
+              "name": {
+                "value": "two pints of milk"
+              }
+            },
+            {
+              "name": {
+                "value": "a dozen eggs"
+              }
+            },
+            {
+              "name": {
+                "value": "six eggs"
+              }
+            },
+            {
+              "name": {
+                "value": "milk and bread"
+              }
+            },
+            {
+              "name": {
+                "value": "eggs bacon and bread"
+              }
+            },
+            {
+              "name": {
+                "value": "fish fingers"
+              }
+            },
+            {
+              "name": {
+                "value": "frozen peas"
+              }
+            },
+            {
+              "name": {
+                "value": "ice cream"
+              }
+            },
+            {
+              "name": {
+                "value": "garlic bread"
+              }
+            },
+            {
+              "name": {
+                "value": "birthday card"
+              }
+            },
+            {
+              "name": {
+                "value": "batteries"
+              }
+            },
+            {
+              "name": {
+                "value": "light bulbs"
+              }
+            },
+            {
+              "name": {
+                "value": "call the dentist"
+              }
+            },
+            {
+              "name": {
+                "value": "book the MOT"
+              }
+            },
+            {
+              "name": {
+                "value": "pay the window cleaner"
+              }
+            },
+            {
+              "name": {
+                "value": "renew the car insurance"
+              }
+            },
+            {
+              "name": {
+                "value": "take the bins out"
+              }
+            },
+            {
+              "name": {
+                "value": "email the school"
+              }
+            },
+            {
+              "name": {
+                "value": "order a new passport"
+              }
+            },
+            {
+              "name": {
+                "value": "fix the fence"
+              }
+            },
+            {
+              "name": {
+                "value": "phone mum"
+              }
+            },
+            {
+              "name": {
+                "value": "send the invoice"
+              }
+            },
+            {
+              "name": {
+                "value": "update the budget"
+              }
+            },
+            {
+              "name": {
+                "value": "book the vet"
+              }
+            },
+            {
+              "name": {
+                "value": "buy a present for grandma"
+              }
+            },
+            {
+              "name": {
+                "value": "sun cream"
+              }
+            },
+            {
+              "name": {
+                "value": "swimming costume"
+              }
+            },
+            {
+              "name": {
+                "value": "phone charger"
+              }
+            },
+            {
+              "name": {
+                "value": "passport"
+              }
+            },
+            {
+              "name": {
+                "value": "plug adaptor"
+              }
+            },
+            {
+              "name": {
+                "value": "walking boots"
+              }
+            }
+          ]
+        },
+        {
+          "name": "LIST_NAME",
+          "values": [
+            {
+              "name": {
+                "value": "shopping"
+              }
+            },
+            {
+              "name": {
+                "value": "shopping list"
+              }
+            },
+            {
+              "name": {
+                "value": "weekly shop"
+              }
+            },
+            {
+              "name": {
+                "value": "the shop"
+              }
+            },
+            {
+              "name": {
+                "value": "groceries"
+              }
+            },
+            {
+              "name": {
+                "value": "big shop"
+              }
+            },
+            {
+              "name": {
+                "value": "to do"
+              }
+            },
+            {
+              "name": {
+                "value": "to do list"
+              }
+            },
+            {
+              "name": {
+                "value": "jobs"
+              }
+            },
+            {
+              "name": {
+                "value": "jobs list"
+              }
+            },
+            {
+              "name": {
+                "value": "work"
+              }
+            },
+            {
+              "name": {
+                "value": "work list"
+              }
+            },
+            {
+              "name": {
+                "value": "packing"
+              }
+            },
+            {
+              "name": {
+                "value": "packing list"
+              }
+            },
+            {
+              "name": {
+                "value": "travel packing"
+              }
+            },
+            {
+              "name": {
+                "value": "holiday packing"
+              }
+            },
+            {
+              "name": {
+                "value": "notice board"
+              }
+            },
+            {
+              "name": {
+                "value": "notices"
+              }
+            },
+            {
+              "name": {
+                "value": "meal plan"
+              }
+            },
+            {
+              "name": {
+                "value": "meal planner"
+              }
+            },
+            {
+              "name": {
+                "value": "christmas"
+              }
+            }
+          ]
+        },
+        {
+          "name": "MEAL",
+          "values": [
+            {
+              "name": {
+                "value": "spaghetti bolognese"
+              }
+            },
+            {
+              "name": {
+                "value": "lasagne"
+              }
+            },
+            {
+              "name": {
+                "value": "fish and chips"
+              }
+            },
+            {
+              "name": {
+                "value": "chicken curry"
+              }
+            },
+            {
+              "name": {
+                "value": "roast chicken"
+              }
+            },
+            {
+              "name": {
+                "value": "roast dinner"
+              }
+            },
+            {
+              "name": {
+                "value": "shepherd's pie"
+              }
+            },
+            {
+              "name": {
+                "value": "cottage pie"
+              }
+            },
+            {
+              "name": {
+                "value": "pizza"
+              }
+            },
+            {
+              "name": {
+                "value": "homemade pizza"
+              }
+            },
+            {
+              "name": {
+                "value": "tacos"
+              }
+            },
+            {
+              "name": {
+                "value": "fajitas"
+              }
+            },
+            {
+              "name": {
+                "value": "stir fry"
+              }
+            },
+            {
+              "name": {
+                "value": "sausage and mash"
+              }
+            },
+            {
+              "name": {
+                "value": "chilli con carne"
+              }
+            },
+            {
+              "name": {
+                "value": "burgers"
+              }
+            },
+            {
+              "name": {
+                "value": "soup"
+              }
+            },
+            {
+              "name": {
+                "value": "salmon and rice"
+              }
+            },
+            {
+              "name": {
+                "value": "jacket potatoes"
+              }
+            },
+            {
+              "name": {
+                "value": "pasta bake"
+              }
+            },
+            {
+              "name": {
+                "value": "a takeaway"
+              }
+            },
+            {
+              "name": {
+                "value": "chinese takeaway"
+              }
+            },
+            {
+              "name": {
+                "value": "beans on toast"
+              }
+            },
+            {
+              "name": {
+                "value": "omelette"
+              }
+            },
+            {
+              "name": {
+                "value": "toad in the hole"
+              }
+            },
+            {
+              "name": {
+                "value": "chicken nuggets"
+              }
+            },
+            {
+              "name": {
+                "value": "risotto"
+              }
+            },
+            {
+              "name": {
+                "value": "steak and chips"
+              }
+            }
+          ]
+        },
+        {
+          "name": "STATUS",
+          "values": [
+            {
+              "name": {
+                "value": "out"
+              }
+            },
+            {
+              "name": {
+                "value": "late"
+              }
+            },
+            {
+              "name": {
+                "value": "home"
+              }
+            },
+            {
+              "name": {
+                "value": "in"
+              }
+            },
+            {
+              "name": {
+                "value": "away"
+              }
+            },
+            {
+              "name": {
+                "value": "back late"
+              }
+            },
+            {
+              "name": {
+                "value": "not in"
+              }
+            },
+            {
+              "name": {
+                "value": "eating out"
+              }
+            },
+            {
+              "name": {
+                "value": "out tonight"
+              }
+            }
+          ]
+        },
+        {
+          "name": "COUNTDOWN",
+          "values": [
+            {
+              "name": {
+                "value": "holiday"
+              }
+            },
+            {
+              "name": {
+                "value": "the holiday"
+              }
+            },
+            {
+              "name": {
+                "value": "christmas"
+              }
+            },
+            {
+              "name": {
+                "value": "center parcs"
+              }
+            },
+            {
+              "name": {
+                "value": "my birthday"
+              }
+            },
+            {
+              "name": {
+                "value": "the trip"
+              }
+            },
+            {
+              "name": {
+                "value": "half term"
+              }
+            },
+            {
+              "name": {
+                "value": "disney"
+              }
+            },
+            {
+              "name": {
+                "value": "the wedding"
+              }
+            },
+            {
+              "name": {
+                "value": "the summer holidays"
+              }
+            },
+            {
+              "name": {
+                "value": "the concert"
+              }
+            },
+            {
+              "name": {
+                "value": "new year"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -662,3 +662,7 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 .chip.more { background: transparent; box-shadow: none; color: var(--blue, #0A84FF); }
 .chip.forget { color: var(--red); }
 .chip .x { font-size: 17px; line-height: 1; margin-left: 2px; }
+
+.alexa-code { padding: 18px 16px 16px; text-align: center; }
+.alexa-code .code { font-size: 44px; font-weight: 800; letter-spacing: 6px; font-variant-numeric: tabular-nums; color: var(--label); }
+.alexa-code p { margin: 8px 0 0; font-size: 15px; color: var(--label2, #8E8E93); line-height: 1.4; }

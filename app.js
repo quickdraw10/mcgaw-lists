@@ -15,6 +15,7 @@ const FAMILY = [
 ];
 
 const IC = {
+  voice: '<path d="M12 3v18M8 7v10M16 7v10M4 10.5v3M20 10.5v3"/>',
   cart: '<path d="M3 4h2l2.2 10.2a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.5L20.5 8H6.2"/><circle cx="10" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/>',
   check: '<circle cx="12" cy="12" r="9"/><path d="m8 12.3 2.7 2.7L16.2 9.5"/>',
   brief: '<rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M3 12.5h18"/>',
@@ -805,6 +806,10 @@ function familyView() {
       ${todoRow()}
       <div class="row tap" data-a="openImport" data-tab="paste"><span class="tile-icon sm" style="--c:#25A366">${icon('list', 18)}</span><div class="row-main"><div class="row-title">Paste a list</div><div class="row-sub">From WhatsApp, Notes, an email…</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
     </div>
+    <div class="section-label">Alexa</div>
+    <div class="group">
+      <div class="row tap" data-a="alexaOpen"><span class="tile-icon sm" style="--c:#1AA3D9">${icon('voice', 18, 2.2)}</span><div class="row-main"><div class="row-title">Alexa &amp; Echo Show</div><div class="row-sub">Link your voice, and things to say</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
+    </div>
     <div class="section-label">Appearance</div>
     <div class="group">
       <div class="field"><label>Mode</label><div class="seg" style="flex:1">${[['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([k, v]) => `<button class="${pref('mode', 'system') === k ? 'on' : ''}" data-a="setMode" data-v="${k}">${v}</button>`).join('')}</div></div>
@@ -869,7 +874,8 @@ function itemRow(it, l, opts = {}) {
   }
   if (subs.length) meta.push(`<span>${subs.filter((s) => s.done).length}/${subs.length} sub-tasks</span>`);
   if (it.notes && l.type !== 'notice') meta.push('<span>📝</span>');
-  if (l.type === 'shopping' && it.created_by && it.created_by !== S.me && !it.assignees.length) meta.push(`<span>added by ${esc(memberName(it.created_by))}</span>`);
+  if (l.type === 'shopping' && it.created_by && it.created_by !== S.me && !it.assignees.length) meta.push(`<span>added by ${esc(memberName(it.created_by))}${it.data?.via === 'alexa' ? ' via Alexa' : ''}</span>`);
+  else if (it.data?.via === 'alexa' && !opts.context && !it.done) meta.push('<span>via Alexa</span>');
   const xmas = l.type === 'christmas' && !it.parent_id;
   const half = xmas && gift?.status === 'bought';
   const on = xmas ? gift?.status === 'wrapped' : it.done;
@@ -1104,6 +1110,7 @@ function sheetHtml(s) {
     case 'password': return passwordSheet();
     case 'import': return importSheet(s);
     case 'todo': return todoSheet(s);
+    case 'alexa': return alexaSheet(s);
     case 'countdown': return countdownSheet(s);
     case 'homeEdit': return homeEditSheet();
     case 'bEntry': return budgetEntrySheet(s);
@@ -1436,6 +1443,44 @@ function todoTargetFields(s, nameForNew) {
 }
 const modeSeg = (s) => `<div class="group" style="margin-top:12px"><div class="field col"><label>How it stays in step</label><div class="seg">${[['0', 'Import only'], ['1', 'Two-way']].map(([v, l]) => `<button class="${(s.twoWay ? '1' : '0') === v ? 'on' : ''}" data-a="todoMode" data-v="${v}">${l}</button>`).join('')}</div></div></div>
   <p class="hint">${s.twoWay ? 'Changes in either app show up in both — ticks, edits, new items and deletions.' : 'New and changed tasks come across from To Do. Changes here don’t go back to To Do.'}</p>`;
+/* ---------- Alexa ---------- */
+const ALEXA_SAYS = [
+  ['Add milk and bread', 'goes on the shared shopping list'],
+  ['Add book the MOT to my to do list', ''],
+  ['What’s on the shopping list?', 'shows it on the Echo Show — tap to tick'],
+  ['Tick off eggs', ''],
+  ['What’s for dinner tomorrow?', ''],
+  ['We’re having lasagne for dinner on Friday', ''],
+  ['I’m out for dinner on Thursday', 'needs your voice linked'],
+  ['What have I got to do?', 'your tasks due this week'],
+  ['How long until Center Parcs?', 'a live countdown on the Show'],
+  ['What’s on today?', 'dinner, tasks, shopping and countdown at a glance'],
+];
+function alexaSheet(s) {
+  const left = s.expires ? Math.max(0, Math.round((s.expires - Date.now()) / 60000)) : 0;
+  const linked = s.linked === undefined ? '' : s.linked
+    ? `<div class="row"><span class="tile-icon sm" style="--c:#30D158">${icon('check', 18)}</span><div class="row-main" style="cursor:default"><div class="row-title">Alexa knows your voice</div><div class="row-sub">Your own lists and tasks work by voice</div></div><button class="link-btn danger" style="margin:0" data-a="alexaForget">Forget</button></div>`
+    : `<div class="row"><span class="tile-icon sm" style="--c:#8E8E93">${icon('person', 18)}</span><div class="row-main" style="cursor:default"><div class="row-title">Not linked yet</div><div class="row-sub">Until then Alexa only uses lists the whole family shares</div></div></div>`;
+  return head('Alexa', '<span></span>') + `
+    <p class="hint" style="margin-top:0">Start with <b>“Alexa, ask family lists…”</b> then say what you want.</p>
+    ${s.missing ? '<p class="hint" style="color:var(--red)">Alexa isn’t set up in Supabase yet — run <b>supabase/alexa.sql</b> first.</p>' : ''}
+    <div class="section-label">Your voice</div>
+    <div class="group">${linked}
+      ${s.code ? `<div class="alexa-code"><div class="code">${s.code.split('').join(' ')}</div><p>Say <b>“Alexa, ask family lists, my code is ${s.code}”</b>.<br>Works once, for ${left} more minute${left === 1 ? '' : 's'}.</p></div>`
+        : `<div class="row tap" data-a="alexaCode"><span class="tile-icon sm" style="--c:#1AA3D9">${icon('voice', 18, 2.2)}</span><div class="row-main"><div class="row-title">${s.linked ? 'Link again' : 'Link my voice'}</div><div class="row-sub">Get a 4-digit code to say to Alexa</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`}
+    </div>
+    <p class="hint">First, in the Alexa app on your phone, set up <b>Voice ID</b> for yourself and turn on <b>Personalise skills</b>. Then get a code and say it to any Echo.</p>
+    <div class="section-label">Things to say</div>
+    <div class="group">${ALEXA_SAYS.map(([t, sub]) => `<div class="row"><div class="row-main" style="cursor:default"><div class="row-title">“${t}”</div>${sub ? `<div class="row-sub">${sub}</div>` : ''}</div></div>`).join('')}</div>
+    <p class="hint">Christmas lists and the budget are never available through Alexa.</p>`;
+}
+async function loadAlexa() {
+  const s = topSheet();
+  if (DEMO) { s.linked = false; return renderSheets(); }
+  const { data, error } = await store.sb.from('alexa_voices').select('person_id');
+  if (error) s.missing = true; else s.linked = data.length > 0;
+  renderSheets();
+}
 function todoSheet(s) {
   const T = S.todo || {};
   const busyBtn = (label, a, disabled = false) => `<div style="margin-top:16px"><button class="btn" data-a="${a}" ${s.busy || disabled ? 'disabled' : ''}>${s.busy ? esc(s.busy) : label}</button></div>`;
@@ -1823,6 +1868,26 @@ const A = {
   todoAuth: async () => {
     const r = await todoRun('Opening Microsoft…', () => store.todo('start'));
     if (r && r.url) location.href = r.url;
+  },
+  alexaOpen: () => { openSheet({ kind: 'alexa' }); loadAlexa(); },
+  alexaCode: async () => {
+    const s = topSheet();
+    for (let tries = 0; tries < 5; tries++) {
+      const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 10000).padStart(4, '0');
+      if (!DEMO) {
+        const { error } = await store.sb.from('alexa_codes').insert({ code, member: S.me });
+        if (error && error.code === '23505') continue;
+        if (error) { s.missing = true; renderSheets(); return toast('Couldn’t make a code — is alexa.sql set up?'); }
+      }
+      s.code = code; s.expires = Date.now() + 10 * 60000;
+      clearInterval(s.tick); s.tick = setInterval(() => { if (topSheet() !== s) return clearInterval(s.tick); if (Date.now() > s.expires) { s.code = null; clearInterval(s.tick); loadAlexa(); } else renderSheets(); }, 30000);
+      return renderSheets();
+    }
+  },
+  alexaForget: async () => {
+    if (!await ask('Forget your voice? Alexa will treat you as an unknown voice until you link it again.', 'Forget', true)) return;
+    if (!DEMO) await store.sb.from('alexa_voices').delete().eq('member', S.me);
+    loadAlexa();
   },
   todoOpen: () => { openSheet({ kind: 'todo', mode: 'home' }); loadTodo(false); },
   todoMode: (el) => { topSheet().twoWay = el.dataset.v === '1'; renderSheets(true); },

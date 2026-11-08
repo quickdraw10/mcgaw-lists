@@ -102,3 +102,20 @@ Run `supabase/update-nov-2026.sql` once in Supabase → SQL Editor, then redeplo
 - **Budget — regular payments:** set up once (every week / 2 weeks / 4 weeks / month / year, on a weekday or day of the month, ongoing or until a date) and they fill every month. Change one month only, or change from a month onwards — earlier months keep their figures.
 - **Work lists on the home screen** show how many urgent/important tasks are overdue, due today, tomorrow and later this week.
 - **Statement import:** Budget → Import a statement. Reads CSV (HSBC, Barclays, Lloyds/Halifax, Atom, Amex and most others), OFX, QIF and Santander text files on the phone; saves date, description and amount only. Matches transactions to regular payments (✓ Paid / Paid £x / Not seen), shows actual in/out and anything not in the budget, and spots payments that look regular.
+
+
+## Alexa & Echo Show
+Say **“Alexa, ask family lists…”** then: *add milk and bread*, *what's on the shopping list*, *tick off eggs*, *what's for dinner tomorrow*, *we're having lasagne on Friday*, *I'm out for dinner Thursday*, *what have I got to do*, *how long until Center Parcs*, *what's on today*. On an Echo Show the list, the week's dinners, your tasks, a live countdown or a "today" dashboard appear on screen — tap an item to tick it.
+
+- **Who's speaking:** each person sets up Voice ID in the Alexa app (with *Personalise skills* on), then in the app goes to **Family → Alexa → Link my voice** and says the 4-digit code. Unknown voices only get lists the whole family shares.
+- **Never available by voice:** Christmas lists and the budget.
+
+**Setup (once):**
+1. Run `supabase/alexa.sql` in Supabase → SQL Editor.
+2. Edge Functions → Deploy a new function → Via editor → name `alexa`, paste `supabase/functions/alexa/index.ts`, Deploy. In its settings turn **off** “Enforce JWT verification”.
+3. developer.amazon.com → Alexa Developer Console (sign in with the Amazon account your Echos use) → Create Skill: name *McGaw Lists*, English (UK), Other → Custom → Provision your own → Start from scratch.
+4. Build → Interaction Model → JSON Editor → paste `alexa/interaction-model-en-GB.json` → Save → Build skill.
+5. Build → Interfaces → turn on **Alexa Presentation Language** (tick the Hub sizes) → Save. Build → Permissions → turn on **Skill Personalization**.
+6. Build → Endpoint → HTTPS → Default region `https://YOUR-PROJECT.supabase.co/functions/v1/alexa?key=YOUR-SECRET-WORD`, certificate option “My development endpoint has a certificate from a trusted certificate authority” → Save. Copy the **Skill ID** shown there.
+7. Supabase → Edge Functions → Secrets: `ALEXA_SKILL_ID` (the Skill ID) and `ALEXA_URL_KEY` (your secret word).
+8. Distribution → Privacy Policy URL `https://quickdraw10.github.io/mcgaw-lists/privacy.html` → Save (don't submit). Test tab → set to **Development**. Then: “Alexa, open family lists”.
