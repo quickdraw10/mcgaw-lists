@@ -405,6 +405,8 @@ function seedDemo() {
     I('l-shop', 'Bananas', { category: 'Fruit & veg' }),
     I('l-shop', 'Sourdough loaf', { category: 'Bakery' }),
     I('l-shop', 'Chicken thighs', { category: 'Meat & fish', quantity: '1kg' }),
+    ...[['Cheddar', 'Dairy & eggs', 6], ['Eggs', 'Dairy & eggs', 8], ['Butter', 'Dairy & eggs', 3], ['Apples', 'Fruit & veg', 5], ['Broccoli', 'Fruit & veg', 4], ['Pasta', 'Food cupboard', 4], ['Tinned tomatoes', 'Food cupboard', 3], ['Toilet roll', 'Household', 2], ['Washing up liquid', 'Household', 1], ['Orange juice', 'Drinks', 3]]
+      .map(([t, c, n]) => I('l-shop', t, { category: c, done: true, data: { cleared: true, uses: n } })),
     I('l-shop', 'Fish fingers', { category: 'Frozen', created_by: 'oscar' }),
     I('l-shop', 'Dishwasher tablets', { category: 'Household' }),
     I('l-shop', 'Free-range eggs', { category: 'Dairy & eggs', done: true, done_by: 'louise' }),
@@ -486,7 +488,10 @@ const accessOf = (listId) => S.data.list_access.filter((a) => a.list_id === list
 const listMembers = (l) => membersSorted().filter((m) => m.id === l.owner || accessOf(l.id).some((a) => a.member === m.id));
 const isOwner = (l) => l.owner === S.me;
 const isAdmin = (l) => isOwner(l) || accessOf(l.id).some((a) => a.member === S.me && a.role === 'admin');
-const itemsOf = (listId) => S.data.items.filter((i) => i.list_id === listId && !i.parent_id).sort(sortItems);
+const itemsOf = (listId) => S.data.items.filter((i) => i.list_id === listId && !i.parent_id && !i.data?.cleared).sort(sortItems);
+// Shopping items cleared from the trolley are kept (one per name) so they can be suggested again
+const pastOf = (listId) => S.data.items.filter((i) => i.list_id === listId && !i.parent_id && i.data?.cleared);
+const pastSorted = (listId) => pastOf(listId).sort((a, b) => (b.data.uses || 1) - (a.data.uses || 1) || a.text.localeCompare(b.text));
 const childrenOf = (id) => S.data.items.filter((i) => i.parent_id === id).sort(sortItems);
 const unreadCount = () => S.data.notifications.filter((n) => !n.read).length;
 const listColour = (l) => l.colour || TYPES[l.type].colour;
@@ -877,7 +882,26 @@ function itemRow(it, l, opts = {}) {
     <div class="row-main" data-a="openItem" data-id="${it.id}"><div class="row-title">${esc(it.text)}</div>${meta.length ? `<div class="row-meta">${meta.join('')}</div>` : ''}</div>
     ${xmas ? '' : avatarStack(it.assignees, 22)}</div>`;
 }
-const quickAdd = (l, ph, extra = '') => `<div class="quick"><span class="plus">${icon('plus', 22, 2.4)}</span><input id="qa-${l.id}" placeholder="${ph}" enterkeyhint="done" autocomplete="off" data-enter="quickAdd" data-id="${l.id}">${extra}</div>`;
+const quickAdd = (l, ph, extra = '') => `<div class="quick"><span class="plus">${icon('plus', 22, 2.4)}</span><input id="qa-${l.id}" placeholder="${ph}" enterkeyhint="done" autocomplete="off" data-enter="quickAdd" data-id="${l.id}"${l.type === 'shopping' ? ' data-input="shopSuggest"' : ''}>${extra}</div>${l.type === 'shopping' ? `<div class="suggest" id="sg-${l.id}"></div>` : ''}`;
+function suggestChips(l, q) {
+  q = q.trim().toLowerCase();
+  if (q.length < 1) return '';
+  const words = parseQty(q).text.toLowerCase() || q;
+  const hits = pastSorted(l.id).filter((i) => i.text.toLowerCase().split(/\s+/).some((w) => w.startsWith(words)) || i.text.toLowerCase().startsWith(words)).slice(0, 6);
+  return hits.length ? `<span class="muted">Used before</span>${hits.map((i) => `<button class="chip" data-a="restorePast" data-id="${i.id}">${icon('plus', 13, 2.6)}${esc(i.text)}</button>`).join('')}` : '';
+}
+function pastSection(l) {
+  const past = pastSorted(l.id);
+  if (!past.length) return '';
+  const open = ui('showPast-' + l.id, true), all = ui('allPast-' + l.id, false), edit = ui('editPast-' + l.id, false);
+  const shown = all || edit ? past : past.slice(0, 18);
+  return `<div class="section-label"><span>Used before (${past.length})</span><span>${open ? `<button data-a="toggleUi" data-k="editPast-${l.id}">${edit ? 'Done' : 'Edit'}</button> · ` : ''}<button data-a="toggleUi" data-k="showPast-${l.id}">${open ? 'Hide' : 'Show'}</button></span></div>
+    ${open ? `<div class="past-chips">${shown.map((i) => edit
+      ? `<button class="chip forget" data-a="forgetPast" data-id="${i.id}" aria-label="Forget ${esc(i.text)}">${esc(i.text)}<span class="x">×</span></button>`
+      : `<button class="chip" data-a="restorePast" data-id="${i.id}" aria-label="Add ${esc(i.text)} back to the list">${icon('plus', 13, 2.6)}${esc(i.text)}</button>`).join('')}
+      ${!all && !edit && past.length > shown.length ? `<button class="chip more" data-a="toggleUi" data-k="allPast-${l.id}">Show all ${past.length}</button>` : ''}</div>
+      <p class="hint" style="margin:8px 4px 0">${edit ? 'Tap an item to forget it.' : 'Tap to put something back on the list.'}</p>` : ''}`;
+}
 const doneSection = (l, done, label, limit = 30) => {
   if (!done.length) return '';
   const open = ui('showDone-' + l.id, l.type === 'shopping');
@@ -899,7 +923,7 @@ function shoppingView(l) {
     if (rows.length) body += `<div class="section-label">${a}</div><div class="group" data-reorder>${rows.map((i) => itemRow(i, l)).join('')}</div>`;
   }
   if (!open.length) body = `<div class="empty"><div class="big">${done.length ? 'Everything’s in the trolley 🛒' : 'Nothing on the list'}</div>Type what you need — try “2 milk” or “500g mince”. Items are sorted into aisles automatically.</div>`;
-  return quickAdd(l, 'Add an item') + body + doneSection(l, done, 'In the trolley');
+  return quickAdd(l, 'Add an item') + body + doneSection(l, done, 'In the trolley') + pastSection(l);
 }
 
 /* ---------- To do ---------- */
@@ -1527,10 +1551,19 @@ function passwordSheet() {
 const A = {
   go: (el) => { if (S.sheets.length) { S.sheets = []; } go(el.dataset.h); },
   filter: (el) => { S.filter = el.dataset.k; render(); },
-  toggleUi: (el) => { S.ui[el.dataset.k] = !ui(el.dataset.k, el.dataset.k.startsWith('showDone') ? getList(el.dataset.k.slice(9))?.type === 'shopping' : false); render(); },
+  toggleUi: (el) => { S.ui[el.dataset.k] = !ui(el.dataset.k, el.dataset.k.startsWith('showDone') ? getList(el.dataset.k.slice(9))?.type === 'shopping' : el.dataset.k.startsWith('showPast')); render(); },
   setWorkSort: (el) => { setPref('workSort', el.dataset.v); render(); },
   setUi: (el) => { const v = el.dataset.v; S.ui[el.dataset.k] = v === '1' ? true : v === '0' ? false : v; render(); const q = document.querySelector('.quick input'); if (q && el.dataset.k.match(/^(for|bag)-/)) q.focus(); },
   closeSheet: () => closeSheet(),
+  restorePast: async (el) => {
+    const i = S.data.items.find((x) => x.id === el.dataset.id);
+    if (!i) return;
+    const q = document.getElementById('qa-' + i.list_id);
+    const typed = q && q.value.trim() ? parseQty(q.value.trim()).qty : null;
+    if (q) q.value = '';
+    await restorePast(i, typed || null);
+  },
+  forgetPast: (el) => del('items', { id: el.dataset.id }),
   noticeTile: () => { const l = S.data.lists.find((x) => x.type === 'notice'); l ? go('#/list/' + l.id) : A.newList({ dataset: { type: 'notice' } }); },
 
   newList: (el) => {
@@ -1599,6 +1632,7 @@ const A = {
     if (!done.length) return toast('Nothing to clear');
     if (!await ask(`Remove ${done.length} completed item${done.length === 1 ? '' : 's'}?`, 'Remove', true)) return;
     if (topSheet()?.kind === 'listMenu') S.sheets.pop();
+    if (l.type === 'shopping') return clearShopping(l, done);
     for (const i of done) await del('items', { id: i.id });
   },
   unpack: async (el) => {
@@ -1947,6 +1981,23 @@ const A = {
 };
 
 /* Typing / changes */
+async function clearShopping(l, done) {
+  const past = pastOf(l.id);
+  for (const i of done) {
+    const same = past.filter((p) => p.text.toLowerCase() === i.text.toLowerCase());
+    const uses = (i.data?.uses || 0) + same.reduce((n, p) => n + (p.data.uses || 1), 0) + 1;
+    for (const p of same) await del('items', { id: p.id });
+    // Sub-items aren't needed in the history
+    for (const c of childrenOf(i.id)) await del('items', { id: c.id });
+    await upd('items', { id: i.id }, { data: { ...(i.data || {}), cleared: true, uses }, notes: null, assignees: [] });
+  }
+  toast(`Cleared ${done.length} — they’ll be suggested next time`);
+}
+async function restorePast(i, qty) {
+  const data = { ...(i.data || {}) }; delete data.cleared;
+  await upd('items', { id: i.id }, { data, done: false, done_by: null, done_at: null, quantity: qty !== undefined ? qty : null, position: Date.now() / 1000 });
+  toast(`${i.text} is back on the list`);
+}
 const ENTER = {
   quickAdd: async (el) => {
     const l = getList(el.dataset.id);
@@ -1958,6 +2009,8 @@ const ENTER = {
       const dup = itemsOf(l.id).find((i) => i.text.toLowerCase() === p.text.toLowerCase());
       if (dup && !dup.done) return toast(`${dup.text} is already on the list`);
       if (dup && dup.done) return upd('items', { id: dup.id }, { done: false, done_by: null, done_at: null, quantity: p.qty || dup.quantity });
+      const old = pastOf(l.id).find((i) => i.text.toLowerCase() === p.text.toLowerCase());
+      if (old) return restorePast(old, p.qty || null);
       return ins('items', newItem(l, p.text, { quantity: p.qty || null, category: guessAisle(p.text) }));
     }
     if (l.type === 'christmas') {
@@ -2010,6 +2063,7 @@ const CHANGE = {
   renameList: (el) => { const v = el.value.trim(); if (v) upd('lists', { id: el.dataset.id }, { title: v }); },
 };
 const INPUT = {
+  shopSuggest: (el) => { const box = document.getElementById('sg-' + el.dataset.id); if (box) box.innerHTML = suggestChips(getList(el.dataset.id), el.value); },
   nlTitle: (el) => { const d = topSheet().draft; d.title = el.value; d.touched = true; const b = $('[data-a="createList"]'); if (b) { b.disabled = !d.title.trim(); b.style.opacity = d.title.trim() ? 1 : 0.4; } },
   importText: (el) => {
     topSheet().text = el.value;

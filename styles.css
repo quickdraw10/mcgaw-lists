@@ -654,3 +654,11 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 .sort-row .seg button { font-size: 13px; padding: 5px 4px; }
 
 .sheet-head .txt.back { font-weight: 500; }
+
+.suggest { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 2px 0; font-size: 13px; }
+.suggest:empty { display: none; }
+.suggest .chip, .past-chips .chip { font-size: 14px; padding: 6px 12px; }
+.past-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip.more { background: transparent; box-shadow: none; color: var(--blue, #0A84FF); }
+.chip.forget { color: var(--red); }
+.chip .x { font-size: 17px; line-height: 1; margin-left: 2px; }

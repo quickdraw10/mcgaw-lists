@@ -10,7 +10,7 @@ Same building blocks as Vouch: **GitHub Pages** hosts the app, **Supabase** stor
 
 | List type | How it works |
 |---|---|
-| **Shopping** | Type “2 milk” or “500g mince” — it works out the quantity and sorts by aisle. Tick into “In the trolley”, then Clear. |
+| **Shopping** | Type “2 milk” or “500g mince” — it works out the quantity and sorts by aisle. Tick into “In the trolley”, then Clear. Cleared items are remembered: they’re suggested as you type and listed under “Used before” (most-bought first) — tap to put one back. |
 | **To do** | Overdue / Today / Coming up / Any time. Due dates, “Important” flag, sub-tasks, assign to 1, 2 or everyone. “Just mine” filter. |
 | **Work** | Active (to do + doing, with a “Doing” tag) and Done tabs, grouped by priority. Sort by your own order or by due date. Sub-tasks and due dates. |
 | **Christmas** | Gifts grouped by who they're for, with price, link and Idea → Bought → Wrapped. Total planned and spent. **Keep secret from** hides a gift from someone even on a shared list (done automatically when you add a gift for someone on the list). |
