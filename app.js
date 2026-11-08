@@ -62,8 +62,8 @@ const icon = (n, s = 22, w = 1.9) => `<svg width="${s}" height="${s}" viewBox="0
 const TYPES = {
   shopping:  { name: 'Shopping',        icon: 'cart',  colour: '#30B05A', title: 'Weekly shop',   desc: 'Sorted by aisle. Tick things into the trolley.', sub: false },
   todo:      { name: 'To do',           icon: 'check', colour: '#0A84FF', title: 'To do',         desc: 'Due dates, sub-tasks and who’s doing what.', sub: true },
-  work:      { name: 'Work',            icon: 'brief', colour: '#5E5CE6', title: 'Work',          desc: 'Prioritised tasks moving To do → Doing → Done.', sub: true },
-  christmas: { name: 'Christmas',       icon: 'gift',  colour: '#E0352B', title: 'Christmas 2026', desc: 'Gift ideas by person, budget, and secrets.', sub: true },
+  work:      { name: 'Work',            icon: 'brief', colour: '#5E5CE6', title: 'Work',          desc: 'Prioritised tasks, sorted your way or by due date.', sub: true },
+  christmas: { name: 'Gift list',       icon: 'gift',  colour: '#E0352B', title: 'Christmas 2026', desc: 'Christmas, birthdays, weddings, christenings — ideas by person, budget and secrets.', sub: true },
   packing:   { name: 'Travel packing', icon: 'bag',   colour: '#FF9500', title: 'Travel packing', desc: 'A bag each, how many of each, and a countdown to departure.', sub: true },
   meals:     { name: 'Meal planner',    icon: 'meal',  colour: '#FF375F', title: 'Meal planner',  desc: 'This week’s meals and who’s home for them.', sub: false },
   notice:    { name: 'Notice board',    icon: 'pin',   colour: '#F5B800', title: 'Notice board',  desc: 'Family notes, pinned with “seen by”.', sub: false },
@@ -1123,6 +1123,7 @@ function sheetHtml(s) {
 }
 
 /* ---------- New list ---------- */
+const GIFT_OCCASIONS = () => { const y = new Date().getMonth() === 11 && new Date().getDate() > 26 ? new Date().getFullYear() + 1 : new Date().getFullYear(); return [`Christmas ${y}`, 'Birthday', 'Wedding', 'Christening', 'Baby shower', 'Anniversary']; };
 function newListSheet(s) {
   const d = s.draft;
   const others = membersSorted().filter((m) => m.id !== S.me);
@@ -1130,6 +1131,7 @@ function newListSheet(s) {
     <div class="types" style="margin-top:6px">${TYPE_ORDER.map((t) => `<button class="type-card ${d.type === t ? 'on' : ''}" style="--c:${TYPES[t].colour}" data-a="pickType" data-t="${t}"><span class="tile-icon sm" style="--c:${TYPES[t].colour}">${icon(TYPES[t].icon, 18)}</span><b>${TYPES[t].name}</b><span>${TYPES[t].desc}</span></button>`).join('')}</div>
     <div class="section-label">Name</div>
     <input class="big-input" id="nl-title" value="${esc(d.title)}" placeholder="List name" data-input="nlTitle" autocomplete="off">
+    ${d.type === 'christmas' ? `<div class="past-chips" style="margin-top:10px">${GIFT_OCCASIONS().map((o) => `<button class="chip ${d.title === o ? 'on' : ''}" data-a="nlOccasion" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : ''}
     <div class="section-label">Colour</div>
     ${swatchHtml(d.colour, 'data-a="nlColour"')}
     <div class="section-label"><span>Who can see it</span><button data-a="nlAllAdmin">${others.every((m) => d.share[m.id] === 'admin') ? 'Undo admins' : 'Everyone admin'}</button></div>
@@ -1397,7 +1399,7 @@ function guessType(name) {
   const n = name.toLowerCase();
   if (/shop|grocer|tesco|sainsbury|asda|aldi|lidl|waitrose|morrisons|food/.test(n)) return 'shopping';
   if (/work|job|office|cloudbass|project/.test(n)) return 'work';
-  if (/christmas|xmas|gift|present|birthday/.test(n)) return 'christmas';
+  if (/christmas|xmas|gift|present|birthday|wedding|christening|baby shower|wish ?list/.test(n)) return 'christmas';
   if (/pack|holiday|trip|travel/.test(n)) return 'packing';
   return 'todo';
 }
@@ -1472,7 +1474,7 @@ function alexaSheet(s) {
     <p class="hint">First, in the Alexa app on your phone, set up <b>Voice ID</b> for yourself and turn on <b>Personalise skills</b>. Then get a code and say it to any Echo.</p>
     <div class="section-label">Things to say</div>
     <div class="group">${ALEXA_SAYS.map(([t, sub]) => `<div class="row"><div class="row-main" style="cursor:default"><div class="row-title">“${t}”</div>${sub ? `<div class="row-sub">${sub}</div>` : ''}</div></div>`).join('')}</div>
-    <p class="hint">Christmas lists and the budget are never available through Alexa.</p>`;
+    <p class="hint">Gift lists and the budget are never available through Alexa — so no surprises get spoiled.</p>`;
 }
 async function loadAlexa() {
   const s = topSheet();
@@ -1615,6 +1617,7 @@ const A = {
     const type = el.dataset?.type || 'shopping';
     openSheet({ kind: 'newList', draft: { type, title: TYPES[type].title, colour: TYPES[type].colour, share: {}, touched: false } });
   },
+  nlOccasion: (el) => { const d = topSheet().draft; d.title = el.dataset.v === 'Birthday' ? '’s birthday' : el.dataset.v; d.touched = true; renderSheets(true); if (el.dataset.v === 'Birthday') setTimeout(() => { const i = $('#nl-title'); if (i) { i.focus(); i.setSelectionRange(0, 0); } }, 50); },
   pickType: (el) => { const d = topSheet().draft; d.type = el.dataset.t; if (!d.touched) d.title = TYPES[d.type].title; d.colour = TYPES[d.type].colour; renderSheets(true); },
   nlColour: (el) => { topSheet().draft.colour = el.dataset.c; renderSheets(true); },
   nlShare: (el) => { const d = topSheet().draft; if (el.dataset.v === 'off') delete d.share[el.dataset.m]; else d.share[el.dataset.m] = el.dataset.v; renderSheets(true); },

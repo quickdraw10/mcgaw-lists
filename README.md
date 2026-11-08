@@ -13,7 +13,7 @@ Same building blocks as Vouch: **GitHub Pages** hosts the app, **Supabase** stor
 | **Shopping** | Type “2 milk” or “500g mince” — it works out the quantity and sorts by aisle. Tick into “In the trolley”, then Clear. Cleared items are remembered: they’re suggested as you type and listed under “Used before” (most-bought first) — tap to put one back. |
 | **To do** | Overdue / Today / Coming up / Any time. Due dates, “Important” flag, sub-tasks, assign to 1, 2 or everyone. “Just mine” filter. |
 | **Work** | Active (to do + doing, with a “Doing” tag) and Done tabs, grouped by priority. Sort by your own order or by due date. Sub-tasks and due dates. |
-| **Christmas** | Gifts grouped by who they're for, with price, link and Idea → Bought → Wrapped. Total planned and spent. **Keep secret from** hides a gift from someone even on a shared list (done automatically when you add a gift for someone on the list). |
+| **Gift list** | For Christmas, birthdays, weddings, christenings. Gifts grouped by who they're for, with price, link and Idea → Bought → Wrapped. Total planned and spent. **Keep secret from** hides a gift from someone even on a shared list (done automatically when you add a gift for someone on the list). |
 | **Travel packing** | A bag per person plus a Shared bag, progress bars, one-tap “essentials” starter list, “Unpack everything” to reuse next trip. |
 | **Meal planner** | Dinner each night by default (breakfast and lunch can be shown with one tap at the bottom, or in list options), who's cooking, and tap each face for **home → out → late → not sure** with a head-count. Ingredients go straight to a shopping list. |
 | **Notice board** | Coloured notes, pin to top, “show until” date, and “seen by” ticks. |
@@ -92,7 +92,7 @@ If the webhook shows a 401 error: open the function's settings, turn off **Enfor
 ## November 2026 update
 Run `supabase/update-nov-2026.sql` once in Supabase → SQL Editor, then redeploy the `todo` Edge Function with the new code.
 
-- **Christmas privacy:** bought / wrapped, who's buying and private notes live in a separate table the gift's recipient can't read. Their own wishes stay visible to them.
+- **Gift list privacy:** bought / wrapped, who's buying and private notes live in a separate table the gift's recipient can't read. Their own wishes stay visible to them.
 - **Priorities:** Standard, Urgent, Important, Urgent & important (shown in that order of importance, top to bottom: U&I, Urgent, Important, then everything else).
 - **Travel packing:** item counts (“underwear x8”), departure countdowns (as many as you like).
 - **Press and hold** any item to move it.
@@ -108,7 +108,7 @@ Run `supabase/update-nov-2026.sql` once in Supabase → SQL Editor, then redeplo
 Say **“Alexa, ask family lists…”** then: *add milk and bread*, *what's on the shopping list*, *tick off eggs*, *what's for dinner tomorrow*, *we're having lasagne on Friday*, *I'm out for dinner Thursday*, *what have I got to do*, *how long until Center Parcs*, *what's on today*. On an Echo Show the list, the week's dinners, your tasks, a live countdown or a "today" dashboard appear on screen — tap an item to tick it.
 
 - **Who's speaking:** each person sets up Voice ID in the Alexa app (with *Personalise skills* on), then in the app goes to **Family → Alexa → Link my voice** and says the 4-digit code. Unknown voices only get lists the whole family shares.
-- **Never available by voice:** Christmas lists and the budget.
+- **Never available by voice:** gift lists and the budget.
 
 **Setup (once):**
 1. Run `supabase/alexa.sql` in Supabase → SQL Editor.
