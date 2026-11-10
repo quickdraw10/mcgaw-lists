@@ -112,6 +112,15 @@ export async function verifyAlexa(headers: Headers, body: string, req: any, skil
   return null;
 }
 
+// Requests passed on by the Alexa-hosted relay: Amazon already checked them; we check the skill and freshness
+export function relayCheck(req: any, skillId: string, now = Date.now()) {
+  const appId = req?.context?.System?.application?.applicationId ?? req?.session?.application?.applicationId;
+  if (!skillId || appId !== skillId) return "wrong skill id";
+  const ts = Date.parse(req?.request?.timestamp ?? "");
+  if (!ts || Math.abs(now - ts) > 150_000) return "stale timestamp";
+  return null;
+}
+
 /* ================ Echo Show screens ================ */
 // Echo Show screens (Alexa Presentation Language documents).
 
@@ -1020,11 +1029,13 @@ if (!Deno.env.get("ALEXA_TEST")) Deno.serve(async (r: Request) => {
   if (r.method !== "POST") return new Response("McGaw Lists Alexa skill", { status: 200 });
   const url = new URL(r.url);
   const key = env("ALEXA_URL_KEY");
-  if (!key || url.searchParams.get("key") !== key) return new Response("Not found", { status: 404 });
+  if (!key || (url.searchParams.get("key") !== key && r.headers.get("x-mcgaw-key") !== key)) return new Response("Not found", { status: 404 });
   const body = await r.text();
   let req: Any;
   try { req = JSON.parse(body); } catch { return new Response("Bad request", { status: 400 }); }
-  const problem = await verifyAlexa(r.headers, body, req, env("ALEXA_SKILL_ID"));
+  // Two ways in: straight from Amazon (signed), or via the Alexa-hosted relay (which sends the secret word as a header)
+  const viaRelay = r.headers.get("x-mcgaw-key") === key;
+  const problem = viaRelay ? relayCheck(req, env("ALEXA_SKILL_ID")) : await verifyAlexa(r.headers, body, req, env("ALEXA_SKILL_ID"));
   if (problem) { console.warn("Rejected Alexa request:", problem); return new Response("Forbidden", { status: 403 }); }
   try {
     return Response.json(await route(req));
