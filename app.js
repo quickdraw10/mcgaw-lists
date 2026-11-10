@@ -569,7 +569,7 @@ function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const [name, id] = h.split('/');
   if (name === 'list' && id) return { name: 'list', id };
-  if (['mine', 'activity', 'family', 'countdowns', 'budget'].includes(name)) return { name };
+  if (['mine', 'activity', 'family', 'countdowns', 'budget', 'tv'].includes(name)) return { name };
   return { name: 'home' };
 }
 const go = (hash) => { location.hash = hash; };
@@ -590,9 +590,12 @@ function render() {
   else if (r.name === 'family') html = familyView();
   else if (r.name === 'countdowns') html = countdownsView();
   else if (r.name === 'budget') html = budgetView();
+  else if (r.name === 'tv') html = tvView();
   else html = homeView();
   app.innerHTML = html;
-  app.classList.toggle('no-tabs', ['list', 'countdowns', 'budget'].includes(r.name));
+  app.classList.toggle('no-tabs', ['list', 'countdowns', 'budget', 'tv'].includes(r.name));
+  document.body.classList.toggle('tv-mode', r.name === 'tv');
+  tvWake(r.name === 'tv');
   if (keep) { const el = document.getElementById(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.s, keep.s); } catch { /* */ } } }
   inkPass(app);
   spinFlaps(app);
@@ -600,9 +603,74 @@ function render() {
   renderSheets();
 }
 
+/* ---------- TV dashboard (Fire TV / any big screen) ---------- */
+// Only lists that more than one person can see — nothing private, no gift lists, no budget.
+const tvLists = () => S.data.lists.filter((l) => l.type !== 'christmas' && listMembers(l).length > 1);
+function tvBest(type) {
+  return tvLists().filter((l) => l.type === type).sort((a, b) => listMembers(b).length - listMembers(a).length || itemsOf(b.id).length - itemsOf(a.id).length)[0];
+}
+let TV_WAKE = null;
+async function tvWake(on) {
+  try {
+    if (on && !TV_WAKE && navigator.wakeLock) { TV_WAKE = await navigator.wakeLock.request('screen'); TV_WAKE.addEventListener('release', () => { TV_WAKE = null; }); }
+    if (!on && TV_WAKE) { await TV_WAKE.release(); TV_WAKE = null; }
+  } catch { /* not supported: set the Fire TV screensaver to Never */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && route().name === 'tv') tvWake(true); });
+function tvView() {
+  const who = ui('tvWho', 'family');
+  const t = today(), d1 = ymd(addDays(new Date(), 1)), wk = ymd(addDays(new Date(), 7));
+  const people = membersSorted();
+  const now = new Date();
+  const clock = `<div class="tv-clock"><b data-clock>${now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</b><span>${now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</span></div>`;
+  const chips = `<div class="tv-who">${[['family', 'Everyone'], ...people.map((m) => [m.id, m.name])].map(([k, n]) => `<button class="${who === k ? 'on' : ''}" data-a="setUi" data-k="tvWho" data-v="${k}">${k === 'family' ? '' : avatar(k, 26)}${esc(n)}</button>`).join('')}<button class="tv-exit" data-a="go" data-h="#/family">Exit</button></div>`;
+  // Dinner
+  const ml = tvBest('meals');
+  let dinner = '<div class="tv-card"><div class="tv-k" style="--c:#FF375F">Dinner tonight</div><div class="tv-big muted">No meal planner shared</div></div>';
+  if (ml) {
+    const slotOf = (day) => S.data.meal_slots.find((m) => m.list_id === ml.id && m.day === day && m.slot === 'dinner') || {};
+    const s = slotOf(t);
+    const eaters = listMembers(ml);
+    const stat = (day, id) => S.data.meal_presence.find((p) => p.list_id === ml.id && p.day === day && p.slot === 'dinner' && p.member === id)?.status || 'home';
+    const week = [1, 2, 3, 4, 5, 6].map((n) => ymd(addDays(new Date(), n))).map((day) => `<div class="tv-day"><span>${day === d1 ? 'Tomorrow' : new Date(day + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short' })}</span><b>${esc(slotOf(day).meal || '—')}</b></div>`).join('');
+    dinner = `<button class="tv-card" data-a="go" data-h="#/list/${ml.id}"><div class="tv-k" style="--c:#FF375F">Dinner tonight</div>
+      <div class="tv-big">${esc(s.meal || 'Not planned yet')}</div>
+      ${s.cook ? `<div class="tv-sub">${esc(memberName(s.cook))} cooking</div>` : ''}
+      <div class="tv-eaters">${eaters.map((m) => `<span class="tv-eater ${stat(t, m.id)}">${avatar(m.id, 40)}<i>${stat(t, m.id) === 'out' ? 'out' : stat(t, m.id) === 'late' ? 'late' : ''}</i></span>`).join('')}</div>
+      <div class="tv-week">${week}</div></button>`;
+  }
+  // Tasks
+  const taskLists = tvLists().filter((l) => l.type === 'todo' || l.type === 'work');
+  let tasks = taskLists.flatMap((l) => itemsOf(l.id).filter((i) => !i.done && i.status !== 'done').map((i) => ({ i, l })));
+  tasks = tasks.filter(({ i }) => (i.due && i.due <= wk) || (i.priority || 0) >= 2);
+  if (who !== 'family') tasks = tasks.filter(({ i, l }) => (i.assignees || []).includes(who) || (!(i.assignees || []).length && l.owner === who));
+  tasks.sort((a, b) => (a.i.due || '9999').localeCompare(b.i.due || '9999') || (b.i.priority || 0) - (a.i.priority || 0));
+  const dueLabel = (d) => !d ? '' : d < t ? 'Overdue' : d === t ? 'Today' : d === d1 ? 'Tomorrow' : new Date(d + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short' });
+  const taskCard = `<div class="tv-card tall"><div class="tv-k" style="--c:#0A84FF">${who === 'family' ? 'Everyone’s week' : `${esc(memberName(who))}’s week`} · ${tasks.length}</div>
+    ${tasks.length ? `<div class="tv-tasks">${tasks.slice(0, 9).map(({ i, l }) => `<button class="tv-task ${i.due && i.due < t ? 'late' : ''}" data-a="toggle" data-id="${i.id}"><span class="tv-dot" style="--c:${['#8E8E93', '#0A84FF', '#FF9F0A', '#FF453A'][i.priority || 0]}"></span><span class="tv-tt">${esc(i.text)}</span><span class="tv-due">${dueLabel(i.due)}</span>${avatarStack(i.assignees, 30)}</button>`).join('')}${tasks.length > 9 ? `<div class="tv-more">+${tasks.length - 9} more</div>` : ''}</div>` : '<div class="tv-big muted">Nothing due this week 🎉</div>'}</div>`;
+  // Notices
+  const nl = tvBest('notice');
+  const notes = nl ? itemsOf(nl.id).filter((i) => !i.done && !expired(i)).sort((a, b) => (b.data?.pinned ? 1 : 0) - (a.data?.pinned ? 1 : 0) || b.position - a.position).slice(0, 2) : [];
+  const noteCard = notes.length ? `<div class="tv-notes">${notes.map((n) => `<div class="tv-note" style="--n:${n.data?.colour || '#FFD60A'}"><b>${esc(n.text)}</b><span>${esc(memberName(n.created_by))}</span></div>`).join('')}</div>` : '';
+  // Countdowns
+  const cds = (S.data.countdowns || []).filter((c) => new Date(c.target) > new Date(Date.now() - 864e5) && (!c.list_id || tvLists().some((l) => l.id === c.list_id))).sort((a, b) => a.target.localeCompare(b.target));
+  const cdCard = cds.length ? `<button class="tv-card tv-cd" data-a="go" data-h="#/countdowns" style="--c:${cdColour(cds[0])}"><div class="tv-k" style="--c:${cdColour(cds[0])}">${esc(cds[0].title)}</div><div class="tv-cdface">${cdBox(cds[0], 'big')}</div>
+    ${cds.slice(1, 3).map((c) => `<div class="tv-cdrow"><span>${esc(c.title)}</span>${cdBox(c, 'chip')}</div>`).join('')}</button>` : '';
+  // Shopping
+  const sl = tvBest('shopping');
+  const shop = sl ? itemsOf(sl.id).filter((i) => !i.done) : [];
+  const shopCard = sl ? `<button class="tv-card" data-a="go" data-h="#/list/${sl.id}"><div class="tv-k" style="--c:#30B05A">${esc(sl.title)} · ${shop.length}</div>
+    <div class="tv-shop">${shop.length ? shop.slice(0, 14).map((i) => `<span>${esc(i.text)}${i.quantity ? ` <i>${esc(i.quantity)}</i>` : ''}</span>`).join('') + (shop.length > 14 ? `<span class="muted">+${shop.length - 14} more</span>` : '') : '<span class="muted">Nothing on the list</span>'}</div></button>` : '';
+  return `<div class="tv-board"><div class="tv-top">${clock}${chips}</div>
+    <div class="tv-grid"><div class="tv-col">${dinner}${noteCard}</div><div class="tv-col">${taskCard}</div><div class="tv-col">${cdCard}${shopCard}</div></div></div>`;
+}
+setInterval(() => { const c = document.querySelector('[data-clock]'); if (c) c.textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }, 5000);
+let TV_DAY = today();
+setInterval(() => { if (route().name === 'tv' && today() !== TV_DAY) { TV_DAY = today(); render(); } }, 60000);
+
 function renderTabs(r) {
   const tb = $('#tabbar');
-  if (!S.me || ['list', 'countdowns', 'budget'].includes(r.name)) { tb.className = 'hide'; tb.innerHTML = ''; return; }
+  if (!S.me || ['list', 'countdowns', 'budget', 'tv'].includes(r.name)) { tb.className = 'hide'; tb.innerHTML = ''; return; }
   tb.className = '';
   const mine = myOpenTasks().length;
   const u = unreadCount();
@@ -809,6 +877,9 @@ function familyView() {
     <div class="section-label">Alexa</div>
     <div class="group">
       <div class="row tap" data-a="alexaOpen"><span class="tile-icon sm" style="--c:#1AA3D9">${icon('voice', 18, 2.2)}</span><div class="row-main"><div class="row-title">Alexa &amp; Echo Show</div><div class="row-sub">Link your voice, and things to say</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
+    </div>
+    <div class="group" style="margin-top:12px">
+      <div class="row tap" data-a="go" data-h="#/tv"><span class="tile-icon sm" style="--c:#5E5CE6">${icon('house', 18, 2.2)}</span><div class="row-main"><div class="row-title">TV dashboard</div><div class="row-sub">For the Fire TV: open <b>quickdraw10.github.io/mcgaw-lists/tv</b> in Silk</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
     </div>
     <div class="section-label">Appearance</div>
     <div class="group">

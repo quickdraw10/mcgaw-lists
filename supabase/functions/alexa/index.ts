@@ -125,6 +125,10 @@ function doc(items: Any, idle = 120000) {
     version: "2023.2",
     theme: "dark",
     settings: { idleTimeout: idle },
+    // On Fire TV you move with the remote: whatever is selected gets a blue outline
+    styles: {
+      focusFrame: { values: [{ backgroundColor: CARD, borderColor: CARD, borderWidth: "3dp" }, { when: "${state.focused}", borderColor: "#0A84FF", borderWidth: "4dp" }] },
+    },
     mainTemplate: {
       parameters: ["payload"],
       items: [{
@@ -168,7 +172,8 @@ function listDoc(d: { title: string; kicker: string; subtitle: string; colour: s
     onPress: { type: "SendEvent", arguments: ["tick", "${data.listId ?? payload.d.listId}", "${data.id}"] },
     item: {
       type: "Frame",
-      backgroundColor: CARD,
+      style: "focusFrame",
+      inheritParentState: true,
       borderRadius: px(18),
       item: {
         type: "Container", direction: "row", alignItems: "center",
@@ -313,7 +318,7 @@ function todayDoc(d: Any) {
     type: "TouchWrapper", grow: 1, shrink: 1, height: "0dp", spacing: px(16),
     onPress: { type: "SendEvent", arguments: ev },
     item: {
-      type: "Frame", height: "100%", backgroundColor: CARD, borderRadius: px(24), ...extra,
+      type: "Frame", height: "100%", style: "focusFrame", inheritParentState: true, borderRadius: px(24), ...extra,
       item: { type: "Container", height: "100%", paddingLeft: px(22), paddingRight: px(22), paddingTop: px(20), paddingBottom: px(18), items },
     },
   });
@@ -346,7 +351,7 @@ function todayDoc(d: Any) {
     type: "TouchWrapper", grow: 1, shrink: 1, height: "0dp", spacing: px(16), when: "${payload.d.cd != null}",
     onPress: { type: "SendEvent", arguments: ["open", "countdown", ""] },
     item: {
-      type: "Frame", height: "100%", backgroundColor: CARD, borderRadius: px(24),
+      type: "Frame", height: "100%", style: "focusFrame", inheritParentState: true, borderRadius: px(24),
       item: {
         type: "Container", height: "100%", paddingLeft: px(22), paddingRight: px(22), paddingTop: px(20), paddingBottom: px(18),
         bind: [

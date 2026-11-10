@@ -115,7 +115,10 @@ Say **“Alexa, ask family lists…”** then: *add milk and bread*, *what's on 
 2. Edge Functions → Deploy a new function → Via editor → name `alexa`, paste `supabase/functions/alexa/index.ts`, Deploy. In its settings turn **off** “Enforce JWT verification”.
 3. developer.amazon.com → Alexa Developer Console (sign in with the Amazon account your Echos use) → Create Skill: name *McGaw Lists*, English (UK), Other → Custom → Provision your own → Start from scratch.
 4. Build → Interaction Model → JSON Editor → paste `alexa/interaction-model-en-GB.json` → Save → Build skill.
-5. Build → Interfaces → turn on **Alexa Presentation Language** (tick the Hub sizes) → Save. Build → Permissions → turn on **Skill Personalization**.
+5. Build → Interfaces → turn on **Alexa Presentation Language** (tick all the Hub sizes and **TV Fullscreen**) → Save. Build → Permissions → turn on **Skill Personalization**.
 6. Build → Endpoint → HTTPS → Default region `https://YOUR-PROJECT.supabase.co/functions/v1/alexa?key=YOUR-SECRET-WORD`, certificate option “My development endpoint has a certificate from a trusted certificate authority” → Save. Copy the **Skill ID** shown there.
 7. Supabase → Edge Functions → Secrets: `ALEXA_SKILL_ID` (the Skill ID) and `ALEXA_URL_KEY` (your secret word).
 8. Distribution → Privacy Policy URL `https://quickdraw10.github.io/mcgaw-lists/privacy.html` → Save (don't submit). Test tab → set to **Development**. Then: “Alexa, open family lists”.
+
+## TV dashboard (Fire TV or any big screen)
+On the Fire TV open **Silk Browser**, go to `quickdraw10.github.io/mcgaw-lists/tv`, sign in once, and bookmark it. Shows the clock, tonight's dinner and the week, everyone's tasks for the week (or pick a person), notice board, live countdown and the shopping list — updating live. Only lists more than one person can see appear (nothing private, no gift lists, no budget). Set the Fire TV screensaver to *Never* if you want it to stay on.
