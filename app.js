@@ -821,8 +821,7 @@ function myOpenTasks() {
     return l && !i.done && (i.assignees || []).includes(S.me) && !['notice', 'meals'].includes(l.type);
   });
 }
-function mineView() {
-  const items = myOpenTasks();
+function mineListView(items) {
   const t = today(), wk = ymd(addDays(new Date(), 7));
   const buckets = [
     ['Overdue', items.filter((i) => i.due && i.due < t)],
@@ -837,8 +836,18 @@ function mineView() {
     rows.sort((a, b) => priOf(b) - priOf(a) || (a.due || '').localeCompare(b.due || ''));
     body += `<div class="section-label">${label}</div><div class="group">${rows.map((i) => itemRow(i, getList(i.list_id), { context: true })).join('')}</div>`;
   }
-  if (!body) body = `<div class="empty"><div class="big">All clear 🎉</div>Anything assigned to you across the family’s lists will show up here.</div>`;
-  return `<div class="nav"><span></span></div><h1 class="large">My tasks</h1>${body}`;
+  return body;
+}
+
+function mineView() {
+  const items = myOpenTasks();
+  const view = pref('mineView', 'week');
+  const views = `<div class="seg small cal-views" style="margin-top:4px">${WORK_VIEWS.map(([k, t]) => `<button class="${view === k ? 'on' : ''}" data-a="setMineView" data-v="${k}">${t}</button>`).join('')}</div>`;
+  let body;
+  if (!items.length) body = `<div class="empty"><div class="big">All clear 🎉</div>Anything assigned to you across the family’s lists will show up here.</div>`;
+  else if (view === 'list') body = mineListView(items);
+  else body = workCalendar(null, items, view === 'day' ? 1 : view === '3' ? 3 : 7, true);
+  return `<div class="nav"><span></span></div><h1 class="large">My tasks</h1>${items.length ? views : ''}${body}`;
 }
 
 /* ---------- Activity ---------- */
@@ -1061,7 +1070,7 @@ function workView(l) {
   } else body = workCalendar(l, active, view === 'day' ? 1 : view === '3' ? 3 : 7);
   return quickAdd(l, 'New work task') + workDueChips(l) + seg + views + body + mine;
 }
-function workCalendar(l, items, n) {
+function workCalendar(l, items, n, multi = false) {
   const t = today();
   const days = Array.from({ length: n }, (_, i) => ymd(addDays(new Date(), i)));
   const last = days[days.length - 1];
@@ -1081,13 +1090,15 @@ function workCalendar(l, items, n) {
     else if (colOf(i) === 'later' && i.due) meta.push(`<span>${new Date(i.due + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</span>`);
     if (i.status === 'doing') meta.push('<span class="doing">Doing</span>');
     if (subs.length) meta.push(`<span>${sd}/${subs.length}</span>`);
-    return `<div class="cal-card ${late ? 'is-late' : ''}" data-iid="${i.id}"><button class="check sm" style="--c:${listColour(l)}" data-a="toggle" data-id="${i.id}" aria-label="Done"></button><div class="cc-main" data-a="openItem" data-id="${i.id}"><div class="cc-t">${esc(i.text)}</div>${meta.length || (i.assignees || []).some((a) => a !== S.me) ? `<div class="cc-m">${meta.join('')}${(i.assignees || []).filter((a) => a !== S.me).length ? avatarStack(i.assignees, 16) : ''}</div>` : ''}</div></div>`;
+    const L = multi ? getList(i.list_id) : l;
+    if (multi && L) meta.unshift(`<span class="lst" style="--c:${listColour(L)}">${esc(L.title)}</span>`);
+    return `<div class="cal-card ${late ? 'is-late' : ''}" data-iid="${i.id}"><button class="check sm" style="--c:${listColour(L)}" data-a="toggle" data-id="${i.id}" aria-label="Done"></button><div class="cc-main" data-a="openItem" data-id="${i.id}"><div class="cc-t">${esc(i.text)}</div>${meta.length || (i.assignees || []).some((a) => a !== S.me) ? `<div class="cc-m">${meta.join('')}${(i.assignees || []).filter((a) => a !== S.me).length ? avatarStack(i.assignees, 16) : ''}</div>` : ''}</div></div>`;
   };
   const sortIn = (a, b) => (a.due || '9999').localeCompare(b.due || '9999') || a.position - b.position;
   const bands = PRI_BANDS.map(([p, label, short, cls]) => {
     const inBand = items.filter((i) => priOf(i) === p);
     return `<div class="cal-band ${inBand.length ? '' : 'empty'}"><div class="cal-bl ${cls}"><span>${label}</span>${inBand.length ? `<i>${inBand.length}</i>` : ''}</div>
-      <div class="cal-row">${cols.map((c) => `<div class="cal-cell ${c.key === 'later' ? 'later' : ''}" data-cell data-due="${c.due}" data-pri="${p}" data-list="${l.id}">${inBand.filter((i) => colOf(i) === c.key).sort(sortIn).map(card).join('')}</div>`).join('')}</div></div>`;
+      <div class="cal-row">${cols.map((c) => `<div class="cal-cell ${c.key === 'later' ? 'later' : ''}" data-cell data-due="${c.due}" data-pri="${p}">${inBand.filter((i) => colOf(i) === c.key).sort(sortIn).map(card).join('')}</div>`).join('')}</div></div>`;
   }).join('');
   return `<div class="cal n${n}"><div class="cal-scroll"><div class="cal-grid" style="--cols:${cols.length}"><div class="cal-row cal-head">${head}</div>${bands}</div></div>
     <p class="hint" style="margin:10px 4px 0">Press and hold a task to move it to another day or priority. Overdue tasks sit in Today.</p></div>`;
@@ -1721,6 +1732,7 @@ const A = {
   toggleUi: (el) => { S.ui[el.dataset.k] = !ui(el.dataset.k, el.dataset.k.startsWith('showDone') ? getList(el.dataset.k.slice(9))?.type === 'shopping' : el.dataset.k.startsWith('showPast')); render(); },
   setWorkSort: (el) => { setPref('workSort', el.dataset.v); render(); },
   setWorkView: (el) => { setPref('workView', el.dataset.v); render(); },
+  setMineView: (el) => { setPref('mineView', el.dataset.v); render(); },
   setWorkDue: (el) => { const k = 'wdue-' + el.dataset.id; S.ui[k] = ui(k, '') === el.dataset.v ? '' : el.dataset.v; render(); const q = document.getElementById('qa-' + el.dataset.id); if (q) q.focus(); },
   setUi: (el) => { const v = el.dataset.v; S.ui[el.dataset.k] = v === '1' ? true : v === '0' ? false : v; render(); const q = document.querySelector('.quick input'); if (q && el.dataset.k.match(/^(for|bag)-/)) q.focus(); },
   closeSheet: () => closeSheet(),
