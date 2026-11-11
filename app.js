@@ -29,6 +29,7 @@ const IC = {
   people: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9.5" r="2.5"/><path d="M15.8 14.6c2.4-.4 4.2 1.1 4.7 4.4"/>',
   more: '<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>',
   grip: '<path d="M5 9h14M5 15h14"/>',
+  inbox: '<path d="M4 13l2.5-7.5h11L20 13v5.5H4z"/><path d="M4 13h4.5l1 2h5l1-2H20"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>',
   person: '<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c.8-4 3.8-6.3 7.5-6.3s6.7 2.3 7.5 6.3"/>',
   bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15ZM10 20.5a2.2 2.2 0 0 0 4 0"/>',
@@ -281,6 +282,16 @@ class SupaStore {
     }
     return data;
   }
+  async outlook(action, payload = {}) {
+    const { data, error } = await this.sb.functions.invoke('outlook', { body: { action, ...payload } });
+    if (error) {
+      let msg = error.message;
+      try { const j = await error.context.json(); if (j.error) msg = j.error; } catch { /* keep message */ }
+      if (/Failed to send|not found|404/i.test(msg)) msg = 'The Outlook connection isn’t set up in Supabase yet';
+      throw new Error(msg);
+    }
+    return data;
+  }
   async savePush(sub, me) {
     const j = sub.toJSON();
     await this.upsert('push_subscriptions', { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, member: me }, 'endpoint');
@@ -376,6 +387,7 @@ class DemoStore {
   async savePush() {}
   async insertIgnore(t, rows, key) { if (!this.db[t]) this.db[t] = []; const have = new Set(this.db[t].map((r) => r[key])); this.db[t].push(...rows.filter((r) => !have.has(r[key]))); this.persist(); }
   async todo() { throw new Error('Microsoft To Do sync works once the app is connected to Supabase'); }
+  async outlook() { throw new Error('Outlook works once the app is connected to Supabase'); }
 }
 
 function seedDemo() {
@@ -881,6 +893,7 @@ function familyView() {
     <div class="section-label">Bring in your lists</div>
     <div class="group">
       ${todoRow()}
+      ${outlookRow()}
       <div class="row tap" data-a="openImport" data-tab="paste"><span class="tile-icon sm" style="--c:#25A366">${icon('list', 18)}</span><div class="row-main"><div class="row-title">Paste a list</div><div class="row-sub">From WhatsApp, Notes, an email…</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
     </div>
     <div class="section-label">Alexa</div>
@@ -1019,7 +1032,7 @@ function todoView(l) {
   const open = items.filter((i) => !i.done), done = items.filter((i) => i.done);
   let body = priorityGroups(open, l);
   if (!open.length) body = `<div class="empty"><div class="big">Nothing to do</div>Add a task, then tap it to set a due date, assign it, or break it into sub-tasks.</div>`;
-  return quickAdd(l, 'New task') + mineToggle(l) + body + doneSection(l, done, 'Completed');
+  return outlookBar(l) + quickAdd(l, 'New task') + mineToggle(l) + body + doneSection(l, done, 'Completed');
 }
 
 function priorityGroups(rows, l, sort = 'order') {
@@ -1059,7 +1072,7 @@ function workView(l) {
   if (st === 'done') {
     const list = done.length ? priorityGroups(done.slice(0, 40), l, 'order') : '<div class="empty">Nothing finished yet.</div>';
     const clear = done.length && isAdmin(l) ? `<button class="link-btn" data-a="clearDone" data-id="${l.id}">Clear finished tasks</button>` : '';
-    return quickAdd(l, 'New work task') + workDueChips(l) + seg + list + clear + mine;
+    return outlookBar(l) + quickAdd(l, 'New work task') + workDueChips(l) + seg + list + clear + mine;
   }
   const views = `<div class="seg small cal-views">${WORK_VIEWS.map(([k, t]) => `<button class="${view === k ? 'on' : ''}" data-a="setWorkView" data-v="${k}">${t}</button>`).join('')}</div>`;
   let body;
@@ -1068,7 +1081,7 @@ function workView(l) {
     const sortBar = active.length > 1 ? `<div class="sort-row"><span class="muted">Sort</span><div class="seg small"><button class="${sort === 'order' ? 'on' : ''}" data-a="setWorkSort" data-v="order">My order</button><button class="${sort === 'due' ? 'on' : ''}" data-a="setWorkSort" data-v="due">Due date</button></div></div>` : '';
     body = sortBar + (active.length ? priorityGroups(active, l, sort) : '<div class="empty">Nothing to do. Add a task above.</div>');
   } else body = workCalendar(l, active, view === 'day' ? 1 : view === '3' ? 3 : 7);
-  return quickAdd(l, 'New work task') + workDueChips(l) + seg + views + body + mine;
+  return outlookBar(l) + quickAdd(l, 'New work task') + workDueChips(l) + seg + views + body + mine;
 }
 function workCalendar(l, items, n, multi = false) {
   const t = today();
@@ -1097,7 +1110,7 @@ function workCalendar(l, items, n, multi = false) {
   const sortIn = (a, b) => (a.due || '9999').localeCompare(b.due || '9999') || a.position - b.position;
   const bands = PRI_BANDS.map(([p, label, short, cls]) => {
     const inBand = items.filter((i) => priOf(i) === p);
-    return `<div class="cal-band ${inBand.length ? '' : 'empty'}"><div class="cal-bl ${cls}"><span>${label}</span>${inBand.length ? `<i>${inBand.length}</i>` : ''}</div>
+    return `<div class="cal-band ${inBand.length ? '' : 'is-empty'}"><div class="cal-bl ${cls}"><span>${label}</span>${inBand.length ? `<i>${inBand.length}</i>` : ''}</div>
       <div class="cal-row">${cols.map((c) => `<div class="cal-cell ${c.key === 'later' ? 'later' : ''}" data-cell data-due="${c.due}" data-pri="${p}">${inBand.filter((i) => colOf(i) === c.key).sort(sortIn).map(card).join('')}</div>`).join('')}</div></div>`;
   }).join('');
   return `<div class="cal n${n}"><div class="cal-scroll"><div class="cal-grid" style="--cols:${cols.length}"><div class="cal-row cal-head">${head}</div>${bands}</div></div>
@@ -1242,6 +1255,7 @@ function sheetHtml(s) {
     case 'import': return importSheet(s);
     case 'todo': return todoSheet(s);
     case 'alexa': return alexaSheet(s);
+    case 'outlook': return outlookSheet(s);
     case 'countdown': return countdownSheet(s);
     case 'homeEdit': return homeEditSheet();
     case 'bEntry': return budgetEntrySheet(s);
@@ -1551,6 +1565,62 @@ function rowsFromTask(t, l, pos, includeDone) {
   if (steps.length && TYPES[l.type].sub) steps.forEach((c, i) => rows.push(newItem(l, c.displayName, { parent_id: parent.id, done: !!c.isChecked, done_by: c.isChecked ? S.me : null, position: pos + (i + 1) / 1000 })));
   return rows;
 }
+/* ---------- Outlook → Work list ---------- */
+// Tasks go to Mike's main daily list, "Ongoing Work To-Do List", when it exists; otherwise any Work list
+const outlookKey = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const outlookTarget = () => S.data.lists.find((x) => outlookKey(x.title) === 'ongoingworktodolist') || S.data.lists.find((x) => outlookKey(x.title).includes('ongoingwork')) || null;
+const outlookShowsOn = (l) => { const t = outlookTarget(); return t ? t.id === l.id : l.type === 'work'; };
+async function loadOutlook() {
+  if (DEMO || !S.me) return;
+  try { S.outlook = await store.outlook('overview'); } catch (e) { console.warn('Outlook', e.message); S.outlook = null; }
+  render(); renderSheets(true);
+}
+function outlookBar(l) {
+  const O = S.outlook;
+  if (DEMO || !O || !O.configured || !outlookShowsOn(l)) return '';
+  if (!O.connected) return `<div class="ob-bar"><span class="ob-ico">O</span><div class="ob-txt"><b>Outlook</b><span>Turn work emails that need action into tasks here.</span></div><button class="ob-go" data-a="outlookConnect">Connect</button></div>`;
+  const a = O.account || {};
+  const sub = S.outlookBusy ? esc(S.outlookBusy) : a.last_error ? `<span style="color:var(--red)">${esc(a.last_error)}</span>` : a.last_pull ? `Last checked ${timeAgo(a.last_pull)}` : '“Act now” and “Needs a reply” emails become tasks.';
+  return `<div class="ob-bar"><span class="ob-ico">O</span><div class="ob-txt"><b>Outlook</b><span>${sub}</span></div><button class="ob-go" data-a="outlookPull" data-id="${l.id}" ${S.outlookBusy ? 'disabled' : ''}>${S.outlookBusy ? 'Working…' : 'Pull from inbox'}</button></div>`;
+}
+function outlookRow() {
+  const O = S.outlook;
+  if (DEMO || !O || !O.configured) return '';
+  const tile = `<span class="tile-icon sm" style="--c:#0F6CBD">${icon('inbox', 18)}</span>`;
+  if (!O.connected) return `<div class="row tap" data-a="outlookConnect">${tile}<div class="row-main"><div class="row-title">Connect work Outlook</div><div class="row-sub">Emails that need action become Work tasks</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`;
+  const a = O.account || {};
+  return `<div class="row">${tile}<div class="row-main" style="cursor:default"><div class="row-title">Outlook</div><div class="row-sub">${esc(a.ms_email || 'Connected')}${O.ai ? '' : ' · <span style="color:var(--red)">Claude API key missing</span>'}</div></div><button class="link-btn danger" style="margin:0" data-a="outlookDisconnect">Disconnect</button></div>`;
+}
+function outlookSheet(s) {
+  const l = getList(s.listId);
+  const P = s.tasks || [];
+  const n = P.filter((p) => p.pick).length;
+  const days = `<div class="seg small" style="margin:0 0 12px">${[1, 3, 7].map((d) => `<button class="${s.days === d ? 'on' : ''}" data-a="outlookDays" data-v="${d}">${d === 1 ? 'Last day' : `Last ${d} days`}</button>`).join('')}</div>`;
+  let body;
+  if (s.busy) body = `<div class="empty"><div class="spinner"></div>${esc(s.busy)}</div>`;
+  else if (s.error) body = `<div class="empty" style="color:var(--red)">${esc(s.error)}</div>`;
+  else if (!P.length) body = `<div class="empty"><div class="big">Inbox clear</div>Nothing from the last ${s.days === 1 ? 'day' : s.days + ' days'} needs a new task.${s.read === 0 ? '' : ` (${s.read} emails checked.)`}</div>`;
+  else body = `<p class="hint" style="margin-top:0">${P.length} suggestion${P.length === 1 ? '' : 's'} from ${s.read} email${s.read === 1 ? '' : 's'}. Untick anything you don’t want, change the priority or date, then add.</p>
+    <div class="group">${P.map((p, i) => `<div class="row ob-item ${p.pick ? '' : 'off'}">
+      <button class="check ${p.pick ? 'on' : ''}" data-a="outlookPick" data-i="${i}" aria-label="Include"></button>
+      <div class="row-main" style="cursor:default"><div class="row-title">${esc(p.text)}</div><div class="row-sub">${esc(p.why)}</div>
+        <div class="ob-meta"><select data-change="outlookPri" data-i="${i}" aria-label="Priority">${[3, 2, 1, 0].map((v) => `<option value="${v}" ${v === p.pri ? 'selected' : ''}>${PRI_BANDS.find((b) => b[0] === v)[1]}</option>`).join('')}</select>
+        <input type="date" value="${p.due}" data-change="outlookDue" data-i="${i}" aria-label="Due date"><span>${esc(p.from)}${p.ids.length > 1 ? ` · ${p.ids.length} emails` : ''}</span></div></div></div>`).join('')}</div>`;
+  return head('From your inbox', '<span></span>') + days + body +
+    (P.length && !s.busy ? `<button class="btn" style="margin-top:16px" data-a="outlookAdd" ${n ? '' : 'disabled'}>${n ? `Add ${n} task${n === 1 ? '' : 's'} to ${esc(l ? l.title : 'your list')}` : 'Tick a task to add it'}</button>` : '');
+}
+async function outlookRun(s) {
+  s.busy = `Reading your inbox and sorting it…`; s.error = ''; renderSheets(true);
+  S.outlookBusy = 'Checking your inbox…'; render();
+  const known = S.data.items.filter((i) => i.list_id === s.listId && Array.isArray(i.data?.email_ids)).flatMap((i) => i.data.email_ids);
+  try {
+    const r = await store.outlook('pull', { days: s.days, known });
+    s.tasks = (r.tasks || []).map((t) => ({ ...t, pick: true })); s.read = r.read;
+  } catch (e) { s.error = e.message; }
+  s.busy = false; S.outlookBusy = null;
+  renderSheets(true); loadOutlook();
+}
+
 /* ---------- Microsoft To Do sync ---------- */
 function todoRow() {
   const T = S.todo;
@@ -2006,6 +2076,36 @@ const A = {
     const r = await todoRun('Opening Microsoft…', () => store.todo('start'));
     if (r && r.url) location.href = r.url;
   },
+  outlookConnect: async () => {
+    try { const r = await store.outlook('start'); location.href = r.url; } catch (e) { toast(e.message); }
+  },
+  outlookDisconnect: async () => {
+    if (!await ask('Disconnect Outlook? Tasks you’ve already added stay on your list.', 'Disconnect', true)) return;
+    try { await store.outlook('disconnect'); } catch (e) { toast(e.message); }
+    loadOutlook();
+  },
+  outlookPull: (el) => {
+    const t = outlookTarget() || getList(el.dataset.id);
+    const s = { kind: 'outlook', listId: t.id, days: 3, tasks: [] };
+    openSheet(s); outlookRun(topSheet());
+  },
+  outlookDays: (el) => { const s = topSheet(); s.days = +el.dataset.v; outlookRun(s); },
+  outlookPick: (el) => { const s = topSheet(); const p = s.tasks[+el.dataset.i]; p.pick = !p.pick; renderSheets(true); },
+  outlookAdd: async () => {
+    const s = topSheet(), l = getList(s.listId);
+    const picked = (s.tasks || []).filter((p) => p.pick);
+    if (!l || !picked.length) return;
+    const base = Date.now() / 1000;
+    const rows = picked.map((p, i) => newItem(l, p.text, {
+      priority: p.pri, due: p.due, ...(l.type === 'work' ? { status: 'todo' } : {}), assignees: [S.me],
+      notes: [p.why, `From ${p.from}: “${p.subject}”`, p.link ? `Open in Outlook: ${p.link}` : ''].filter(Boolean).join('\n'),
+      data: { source: 'outlook', email_ids: p.ids, email_link: p.link }, position: base + i / 1000,
+    }));
+    closeSheet();
+    await ins('items', rows);
+    toast(`Added ${rows.length} task${rows.length === 1 ? '' : 's'} to ${l.title}`);
+    if (route().name !== 'list' || route().id !== l.id) location.hash = '#/list/' + l.id;
+  },
   alexaOpen: () => { openSheet({ kind: 'alexa' }); loadAlexa(); },
   alexaCode: async () => {
     const s = topSheet();
@@ -2244,6 +2344,8 @@ const ENTER = {
   },
 };
 const CHANGE = {
+  outlookPri: (el) => { const s = topSheet(); s.tasks[+el.dataset.i].pri = +el.value; },
+  outlookDue: (el) => { const s = topSheet(); if (/^\d{4}-\d{2}-\d{2}$/.test(el.value)) s.tasks[+el.dataset.i].due = el.value; },
   itemText: (el) => { const v = el.value.trim(); if (v) upd('items', { id: el.dataset.id }, { text: v }); },
   itemField: (el) => upd('items', { id: el.dataset.id }, { [el.dataset.f]: el.value || null }),
   giftFor: async (el) => {
@@ -3768,6 +3870,7 @@ async function start() {
     await reload();
     store.subscribe(scheduleReload);
     loadTodo(true);
+    loadOutlook();
   } catch (e) {
     console.error(e);
     showLogin();
@@ -3777,6 +3880,13 @@ async function start() {
 
 window.addEventListener('hashchange', () => { S.sheets = []; render(); $('#view').scrollTop = 0; });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me) { reload(); loadTodo(true); } });
+(() => {
+  const q = new URLSearchParams(location.search).get('outlook');
+  if (!q) return;
+  history.replaceState(null, '', location.pathname + (location.hash || '#/family'));
+  const msg = { connected: 'Outlook connected — open your Work list and tap Pull from inbox', denied: 'Outlook access wasn’t allowed', cancelled: 'Microsoft sign-in was cancelled', expired: 'That took too long — try connecting again', error: 'Couldn’t connect to Outlook — try again' }[q];
+  if (msg) setTimeout(() => toast(msg), 900);
+})();
 (() => {
   const q = new URLSearchParams(location.search).get('todo');
   if (!q) return;

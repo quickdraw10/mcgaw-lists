@@ -122,3 +122,8 @@ Say **“Alexa, ask family lists…”** then: *add milk and bread*, *what's on 
 
 ## TV dashboard (Fire TV or any big screen)
 On the Fire TV open **Silk Browser**, go to `quickdraw10.github.io/mcgaw-lists/tv`, sign in once, and bookmark it. Shows the clock, tonight's dinner and the week, everyone's tasks for the week (or pick a person), notice board, live countdown and the shopping list — updating live. Only lists more than one person can see appear (nothing private, no gift lists, no budget). Set the Fire TV screensaver to *Never* if you want it to stay on.
+
+## Outlook → Work list
+A **Pull from inbox** button on your Work list (the “Ongoing Work To-Do List” if you have one). It reads the last 1/3/7 days of your work inbox (read-only), Claude picks out emails you need to act on or reply to, and you tick which become tasks — with priority and due date filled in, and a link back to the email. Nothing in Outlook is changed.
+
+Setup: run `supabase/outlook.sql`; deploy `supabase/functions/outlook/index.ts` as an Edge Function called `outlook` (JWT verification off); in Azure, let the existing app sign in work accounts, add the redirect `https://YOUR-PROJECT.supabase.co/functions/v1/outlook` and the **Mail.Read** permission; add a Claude API key as the `ANTHROPIC_API_KEY` secret. Then Family → Connect work Outlook.
