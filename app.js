@@ -1027,22 +1027,71 @@ function priorityGroups(rows, l, sort = 'order') {
 }
 
 /* ---------- Work ---------- */
+/* ---------- Work: calendar by day, priority rows ---------- */
+const WORK_VIEWS = [['day', 'Today'], ['3', '3 days'], ['week', 'Week'], ['list', 'List']];
+const PRI_BANDS = [[3, 'Urgent & important', 'U&I', 'red'], [2, 'Urgent', 'Urgent', 'orange'], [1, 'Important', 'Important', 'blue'], [0, 'Everything else', 'Other', 'grey']];
+// "This week" = the coming Friday (today if it's Friday)
+function nextFriday(from = new Date()) { const d = new Date(from); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7)); return ymd(d); }
+const DUE_SHORTCUTS = () => [['today', 'Today', today()], ['tomorrow', 'Tomorrow', ymd(addDays(new Date(), 1))], ['week', 'This week', nextFriday()]];
+function workDueChips(l) {
+  const on = ui('wdue-' + l.id, '');
+  return `<div class="due-chips">${DUE_SHORTCUTS().map(([k, label, d]) => `<button class="chip ${on === k ? 'on' : ''}" data-a="setWorkDue" data-id="${l.id}" data-v="${k}">${label}${k === 'week' ? ` <i>· ${new Date(d + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' })}</i>` : ''}</button>`).join('')}</div>`;
+}
 function workView(l) {
   let items = itemsOf(l.id);
   if (ui('mine-' + l.id, false)) items = items.filter((i) => i.assignees.includes(S.me));
   let st = ui('ws-' + l.id, 'active');
   if (st !== 'done') st = 'active';
-  const isDone = (i) => i.status === 'done';
+  const isDone = (i) => i.status === 'done' || i.done;
   const active = items.filter((i) => !isDone(i)), done = items.filter(isDone);
-  const rows = st === 'done' ? done : active;
-  const sort = pref('workSort', 'order');
+  const view = pref('workView', 'week');
   const seg = `<div class="seg" style="margin:12px 0 0"><button class="${st === 'active' ? 'on' : ''}" data-a="setUi" data-k="ws-${l.id}" data-v="active">Active · ${active.length}</button><button class="${st === 'done' ? 'on' : ''}" data-a="setUi" data-k="ws-${l.id}" data-v="done">Done · ${done.length}</button></div>`;
-  const sortBar = st === 'active' && active.length > 1 ? `<div class="sort-row"><span class="muted">Sort</span><div class="seg small"><button class="${sort === 'order' ? 'on' : ''}" data-a="setWorkSort" data-v="order">My order</button><button class="${sort === 'due' ? 'on' : ''}" data-a="setWorkSort" data-v="due">Due date</button></div></div>` : '';
-  const list = rows.length ? priorityGroups(rows.slice(0, st === 'done' ? 40 : 999), l, st === 'active' ? sort : 'order') : `<div class="empty">${st === 'done' ? 'Nothing finished yet.' : 'Nothing to do. Add a task above.'}</div>`;
-  const clear = st === 'done' && rows.length && isAdmin(l) ? `<button class="link-btn" data-a="clearDone" data-id="${l.id}">Clear finished tasks</button>` : '';
-  return quickAdd(l, 'New work task') + seg + sortBar + list + clear + (listMembers(l).length > 1 ? mineToggle(l) : '');
+  const mine = listMembers(l).length > 1 ? mineToggle(l) : '';
+  if (st === 'done') {
+    const list = done.length ? priorityGroups(done.slice(0, 40), l, 'order') : '<div class="empty">Nothing finished yet.</div>';
+    const clear = done.length && isAdmin(l) ? `<button class="link-btn" data-a="clearDone" data-id="${l.id}">Clear finished tasks</button>` : '';
+    return quickAdd(l, 'New work task') + workDueChips(l) + seg + list + clear + mine;
+  }
+  const views = `<div class="seg small cal-views">${WORK_VIEWS.map(([k, t]) => `<button class="${view === k ? 'on' : ''}" data-a="setWorkView" data-v="${k}">${t}</button>`).join('')}</div>`;
+  let body;
+  if (view === 'list') {
+    const sort = pref('workSort', 'order');
+    const sortBar = active.length > 1 ? `<div class="sort-row"><span class="muted">Sort</span><div class="seg small"><button class="${sort === 'order' ? 'on' : ''}" data-a="setWorkSort" data-v="order">My order</button><button class="${sort === 'due' ? 'on' : ''}" data-a="setWorkSort" data-v="due">Due date</button></div></div>` : '';
+    body = sortBar + (active.length ? priorityGroups(active, l, sort) : '<div class="empty">Nothing to do. Add a task above.</div>');
+  } else body = workCalendar(l, active, view === 'day' ? 1 : view === '3' ? 3 : 7);
+  return quickAdd(l, 'New work task') + workDueChips(l) + seg + views + body + mine;
 }
-
+function workCalendar(l, items, n) {
+  const t = today();
+  const days = Array.from({ length: n }, (_, i) => ymd(addDays(new Date(), i)));
+  const last = days[days.length - 1];
+  const colOf = (i) => (!i.due ? 'later' : i.due <= t ? t : i.due > last ? 'later' : i.due);
+  const cols = [...days.map((d) => ({ key: d, due: d })), { key: 'later', due: '' }];
+  const head = cols.map((c) => {
+    const cnt = items.filter((i) => colOf(i) === c.key).length;
+    if (c.key === 'later') return `<div class="cal-h later"><b>Later</b><span>${cnt ? cnt + ' · ' : ''}after that / no date</span></div>`;
+    const dt = new Date(c.key + 'T12:00'), we = [0, 6].includes(dt.getDay());
+    return `<div class="cal-h ${c.key === t ? 'today' : ''} ${we ? 'we' : ''}"><b>${c.key === t ? 'Today' : c.key === days[1] ? 'Tomorrow' : dt.toLocaleDateString('en-GB', { weekday: 'long' })}</b><span>${dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}${cnt ? ` · ${cnt}` : ''}</span></div>`;
+  }).join('');
+  const card = (i) => {
+    const late = i.due && i.due < t;
+    const subs = childrenOf(i.id), sd = subs.filter((x) => x.done).length;
+    const meta = [];
+    if (late) meta.push(`<span class="late">${fmtDue(i.due)}</span>`);
+    else if (colOf(i) === 'later' && i.due) meta.push(`<span>${new Date(i.due + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</span>`);
+    if (i.status === 'doing') meta.push('<span class="doing">Doing</span>');
+    if (subs.length) meta.push(`<span>${sd}/${subs.length}</span>`);
+    return `<div class="cal-card ${late ? 'is-late' : ''}" data-iid="${i.id}"><button class="check sm" style="--c:${listColour(l)}" data-a="toggle" data-id="${i.id}" aria-label="Done"></button><div class="cc-main" data-a="openItem" data-id="${i.id}"><div class="cc-t">${esc(i.text)}</div>${meta.length || (i.assignees || []).some((a) => a !== S.me) ? `<div class="cc-m">${meta.join('')}${(i.assignees || []).filter((a) => a !== S.me).length ? avatarStack(i.assignees, 16) : ''}</div>` : ''}</div></div>`;
+  };
+  const sortIn = (a, b) => (a.due || '9999').localeCompare(b.due || '9999') || a.position - b.position;
+  const bands = PRI_BANDS.map(([p, label, short, cls]) => {
+    const inBand = items.filter((i) => priOf(i) === p);
+    return `<div class="cal-band ${inBand.length ? '' : 'empty'}"><div class="cal-bl ${cls}"><span>${label}</span>${inBand.length ? `<i>${inBand.length}</i>` : ''}</div>
+      <div class="cal-row">${cols.map((c) => `<div class="cal-cell ${c.key === 'later' ? 'later' : ''}" data-cell data-due="${c.due}" data-pri="${p}" data-list="${l.id}">${inBand.filter((i) => colOf(i) === c.key).sort(sortIn).map(card).join('')}</div>`).join('')}</div></div>`;
+  }).join('');
+  return `<div class="cal n${n}"><div class="cal-scroll"><div class="cal-grid" style="--cols:${cols.length}"><div class="cal-row cal-head">${head}</div>${bands}</div></div>
+    <p class="hint" style="margin:10px 4px 0">Press and hold a task to move it to another day or priority. Overdue tasks sit in Today.</p></div>`;
+}
 /* ---------- Christmas ---------- */
 function giftFor(it) { return it.data?.for || 'unsorted'; }
 function forLabel(f) { return member(f) ? member(f).name : f === 'unsorted' ? 'Not decided yet' : f; }
@@ -1671,6 +1720,8 @@ const A = {
   filter: (el) => { S.filter = el.dataset.k; render(); },
   toggleUi: (el) => { S.ui[el.dataset.k] = !ui(el.dataset.k, el.dataset.k.startsWith('showDone') ? getList(el.dataset.k.slice(9))?.type === 'shopping' : el.dataset.k.startsWith('showPast')); render(); },
   setWorkSort: (el) => { setPref('workSort', el.dataset.v); render(); },
+  setWorkView: (el) => { setPref('workView', el.dataset.v); render(); },
+  setWorkDue: (el) => { const k = 'wdue-' + el.dataset.id; S.ui[k] = ui(k, '') === el.dataset.v ? '' : el.dataset.v; render(); const q = document.getElementById('qa-' + el.dataset.id); if (q) q.focus(); },
   setUi: (el) => { const v = el.dataset.v; S.ui[el.dataset.k] = v === '1' ? true : v === '0' ? false : v; render(); const q = document.querySelector('.quick input'); if (q && el.dataset.k.match(/^(for|bag)-/)) q.focus(); },
   closeSheet: () => closeSheet(),
   restorePast: async (el) => {
@@ -2162,7 +2213,10 @@ const ENTER = {
       const p = parsePackQty(raw);
       return ins('items', newItem(l, p.text, { quantity: p.qty || null, data: { bag: b }, assignees: b === 'shared' ? [] : [b] }));
     }
-    if (l.type === 'work') return ins('items', newItem(l, raw, { status: 'todo', assignees: [S.me] }));
+    if (l.type === 'work') {
+      const pick = DUE_SHORTCUTS().find(([k]) => k === ui('wdue-' + l.id, ''));
+      return ins('items', newItem(l, raw, { status: 'todo', assignees: [S.me], ...(pick ? { due: pick[2] } : {}) }));
+    }
     if (l.type === 'notice') return;
     const solo = listMembers(l).length === 1;
     return ins('items', newItem(l, raw, { assignees: solo ? [S.me] : [] }));
@@ -2239,20 +2293,21 @@ function dragRowFrom(t) {
   if (!t || !t.closest) return null;
   if (t.closest('.check, .seen-btn, input, textarea, select, a, .wish, .switch')) return null;
   const row = t.closest('[data-iid]');
-  if (!row || !row.parentElement || !row.parentElement.hasAttribute('data-reorder')) return null;
+  if (!row || !row.parentElement || !(row.parentElement.hasAttribute('data-reorder') || row.parentElement.hasAttribute('data-cell'))) return null;
   return row;
 }
 function pressStart(t, x, y) {
   cancelPress();
   const row = dragRowFrom(t);
   if (!row) return;
-  DRAG.row = row; DRAG.iid = row.dataset.iid; DRAG.start = { x, y }; DRAG.lastY = y;
+  DRAG.row = row; DRAG.iid = row.dataset.iid; DRAG.start = { x, y }; DRAG.lastY = y; DRAG.lastX = x;
   DRAG.timer = setTimeout(liftRow, 400);
 }
 function cancelPress() { clearTimeout(DRAG.timer); DRAG.timer = null; }
 function liftRow() {
   DRAG.timer = null;
   if (DRAG.row && !DRAG.row.isConnected) DRAG.row = document.querySelector(`[data-iid="${DRAG.iid}"]`);
+  if (DRAG.row?.parentElement?.hasAttribute('data-cell')) return liftCard();
   if (!DRAG.row || !DRAG.row.parentElement?.hasAttribute('data-reorder')) return;
   DRAG.active = true;
   DRAG.group = DRAG.row.parentElement;
@@ -2271,6 +2326,63 @@ function liftRow() {
   };
   DRAG.raf = requestAnimationFrame(step);
 }
+// Calendar: lift a card and drop it on another day / priority
+function liftCard() {
+  const r = DRAG.row.getBoundingClientRect();
+  DRAG.active = true; DRAG.cal = true; DRAG.from = DRAG.row.parentElement; DRAG.target = null;
+  DRAG.off = { x: DRAG.start.x - r.left, y: DRAG.start.y - r.top };
+  const g = DRAG.row.cloneNode(true);
+  g.className += ' cal-ghost';
+  g.style.width = r.width + 'px';
+  document.body.appendChild(g);
+  DRAG.ghost = g;
+  DRAG.row.classList.add('cal-src');
+  document.body.classList.add('dragging');
+  if (navigator.vibrate) navigator.vibrate(12);
+  moveCard(DRAG.lastX, DRAG.lastY);
+  const step = () => {
+    if (!DRAG.active) return;
+    const sc = DRAG.from.closest('.cal-scroll'), v = $('#view');
+    const sr = sc ? sc.getBoundingClientRect() : null;
+    const hx = sr ? (DRAG.lastX < sr.left + 40 ? -10 : DRAG.lastX > sr.right - 40 ? 10 : 0) : 0;
+    const vy = DRAG.lastY < 110 ? -9 : DRAG.lastY > innerHeight - 90 ? 9 : 0;
+    if (hx && sc) sc.scrollLeft += hx;
+    if (vy) v.scrollTop += vy;
+    if (hx || vy) moveCard(DRAG.lastX, DRAG.lastY);
+    DRAG.raf = requestAnimationFrame(step);
+  };
+  DRAG.raf = requestAnimationFrame(step);
+}
+function moveCard(x, y) {
+  DRAG.ghost.style.transform = `translate(${x - DRAG.off.x}px, ${y - DRAG.off.y}px) rotate(2deg)`;
+  const cell = document.elementFromPoint(x, y)?.closest('[data-cell]') || null;
+  if (cell !== DRAG.target) {
+    DRAG.target?.classList.remove('drop');
+    DRAG.target = cell;
+    if (cell && cell !== DRAG.from) cell.classList.add('drop');
+  }
+}
+async function dropCard() {
+  DRAG.ghost?.remove(); DRAG.ghost = null;
+  DRAG.row.classList.remove('cal-src');
+  const cell = DRAG.target; DRAG.target?.classList.remove('drop');
+  DRAG.cal = false;
+  if (!cell || cell === DRAG.from) return;
+  const it = getItem(DRAG.iid);
+  if (!it) return;
+  const pri = +cell.dataset.pri;
+  let due = cell.dataset.due || null;
+  if (!due) {
+    // "Later": keep a date that's already beyond the view, otherwise no date
+    const lastDay = [...cell.parentElement.querySelectorAll('[data-cell]')].map((c) => c.dataset.due).filter(Boolean).pop();
+    due = it.due && lastDay && it.due > lastDay ? it.due : null;
+  }
+  const patch = { priority: pri, due };
+  if (it.due === due && priOf(it) === pri) return;
+  await upd('items', { id: it.id }, patch);
+  const label = PRI_BANDS.find((b) => b[0] === pri)[1];
+  toast(`${due ? fmtDue(due) : 'No date'} · ${label}`);
+}
 function placeRow(y) {
   const sibs = [...DRAG.group.children].filter((c) => c !== DRAG.row && c.hasAttribute('data-iid'));
   let before = null;
@@ -2279,7 +2391,7 @@ function placeRow(y) {
   else { const last = sibs[sibs.length - 1]; if (last && last.nextElementSibling !== DRAG.row) last.after(DRAG.row); }
 }
 function pressMove(x, y, e) {
-  if (DRAG.active) { if (e.cancelable) e.preventDefault(); DRAG.lastY = y; placeRow(y); return; }
+  if (DRAG.active) { if (e.cancelable) e.preventDefault(); DRAG.lastY = y; DRAG.lastX = x; if (DRAG.cal) moveCard(x, y); else placeRow(y); return; }
   if (DRAG.timer && Math.hypot(x - DRAG.start.x, y - DRAG.start.y) > 8) cancelPress();
 }
 function pressEnd() {
@@ -2288,8 +2400,13 @@ function pressEnd() {
   cancelAnimationFrame(DRAG.raf);
   DRAG.active = false;
   DRAG.until = Date.now() + 450;
-  DRAG.row.classList.remove('lifted');
   document.body.classList.remove('dragging');
+  if (DRAG.cal) {
+    const pend = DRAG.pending;
+    dropCard().finally(() => { DRAG.row = null; DRAG.from = null; DRAG.pending = false; if (pend) { render(); renderSheets(true); } });
+    return;
+  }
+  DRAG.row.classList.remove('lifted');
   const ids = [...DRAG.group.querySelectorAll(':scope > [data-iid]')].map((e) => e.dataset.iid);
   if (ids.join() !== DRAG.before) {
     if (DRAG.group.dataset.reorder === 'home') saveHomeOrder(ids);

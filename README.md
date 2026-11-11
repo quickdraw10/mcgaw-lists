@@ -12,7 +12,7 @@ Same building blocks as Vouch: **GitHub Pages** hosts the app, **Supabase** stor
 |---|---|
 | **Shopping** | Type “2 milk” or “500g mince” — it works out the quantity and sorts by aisle. Tick into “In the trolley”, then Clear. Cleared items are remembered: they’re suggested as you type and listed under “Used before” (most-bought first) — tap to put one back. |
 | **To do** | Overdue / Today / Coming up / Any time. Due dates, “Important” flag, sub-tasks, assign to 1, 2 or everyone. “Just mine” filter. |
-| **Work** | Active (to do + doing, with a “Doing” tag) and Done tabs, grouped by priority. Sort by your own order or by due date. Sub-tasks and due dates. |
+| **Work** | A calendar: priority rows (Urgent & important, Urgent, Important, everything else) across day columns — Today, 3 days or Week — plus a Later column (after that, or no date). Overdue tasks sit in Today. Press and hold a task to drag it to another day or priority. Quick dates when adding: Today, Tomorrow, This week (the coming Friday). A List view is still there. |
 | **Gift list** | For Christmas, birthdays, weddings, christenings. Gifts grouped by who they're for, with price, link and Idea → Bought → Wrapped. Total planned and spent. **Keep secret from** hides a gift from someone even on a shared list (done automatically when you add a gift for someone on the list). |
 | **Travel packing** | A bag per person plus a Shared bag, progress bars, one-tap “essentials” starter list, “Unpack everything” to reuse next trip. |
 | **Meal planner** | Dinner each night by default (breakfast and lunch can be shown with one tap at the bottom, or in list options), who's cooking, and tap each face for **home → out → late → not sure** with a head-count. Ingredients go straight to a shopping list. |
