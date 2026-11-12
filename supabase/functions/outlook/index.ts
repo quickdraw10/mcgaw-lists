@@ -130,10 +130,27 @@ Reply with only JSON: {"tasks":[{"task":"...","cat":"act","priority":3,"due":nul
 Emails:
 ${lines}`;
 }
-export function extractJson(text: string) {
-  const s = text.indexOf("{"), e = text.lastIndexOf("}");
-  if (s < 0 || e < s) throw new Error("Claude’s answer wasn’t readable — try again");
-  return JSON.parse(text.slice(s, e + 1));
+// Reads Claude's answer even if it's wrapped in ``` fences, has extra words, or was cut off part-way:
+// any complete task objects are kept.
+export function extractJson(text: string): Row {
+  const t = text.replace(/```(?:json)?/gi, "");
+  const s = t.indexOf("{"), e = t.lastIndexOf("}");
+  if (s >= 0 && e > s) {
+    try { return JSON.parse(t.slice(s, e + 1)); } catch { /* fall through to salvage */ }
+  }
+  const start = t.indexOf("[", t.indexOf('"tasks"'));
+  if (start < 0) throw new Error("Claude’s answer wasn’t readable — try again");
+  const tasks: Row[] = [];
+  let depth = 0, from = -1, inStr = false, esc = false;
+  for (let i = start + 1; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === "{") { if (depth === 0) from = i; depth++; }
+    else if (c === "}") { depth--; if (depth === 0 && from >= 0) { try { tasks.push(JSON.parse(t.slice(from, i + 1))); } catch { /* skip a broken one */ } from = -1; } }
+    else if (c === "]" && depth === 0) break;
+  }
+  return { tasks };
 }
 const ymd = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 function nextWorkingDay() { const d = new Date(); do { d.setDate(d.getDate() + 1); } while ([0, 6].includes(d.getDay())); return ymd(d); }
@@ -154,7 +171,7 @@ async function askClaude(prompt: string) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 3000, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 8000, messages: [{ role: "user", content: prompt }] }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
@@ -163,7 +180,9 @@ async function askClaude(prompt: string) {
     if (/credit|billing/i.test(m)) throw new Error("Your Claude API account needs credit — top up at console.anthropic.com");
     throw new Error(`Claude couldn’t sort the emails (${m})`);
   }
-  return (j.content || []).filter((b: Row) => b.type === "text").map((b: Row) => b.text).join("");
+  const text = (j.content || []).filter((b: Row) => b.type === "text").map((b: Row) => b.text).join("");
+  if (j.stop_reason === "max_tokens") console.warn("Claude's answer was cut off; keeping the complete tasks");
+  return text;
 }
 
 /* ---------- requests ---------- */
@@ -222,12 +241,15 @@ async function handle(req: Request): Promise<Response> {
         const token = await tokenFor(member.id);
         const { data: a } = await getDb().from("outlook_accounts").select("ms_email").eq("member", member.id).maybeSingle();
         const skip = new Set<string>(Array.isArray(body.known) ? body.known : []);
-        const mails = (await recentMail(token, days, a?.ms_email || "")).filter((m) => !skip.has(m.id)).slice(0, 80);
+        const mails = (await recentMail(token, days, a?.ms_email || "")).filter((m) => !skip.has(m.id)).slice(0, 60);
         let tasks: Row[] = [];
         if (mails.length) {
           const who = (member.name || "Mike") + " McGaw";
           const todayStr = new Date().toLocaleDateString("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long", year: "numeric" });
-          tasks = shapeTasks(extractJson(await askClaude(triagePrompt(mails, who, todayStr))), mails);
+          const answer = await askClaude(triagePrompt(mails, who, todayStr));
+          let parsed: Row;
+          try { parsed = extractJson(answer); } catch (e) { console.error("Unreadable answer:", answer.slice(0, 1500)); throw e; }
+          tasks = shapeTasks(parsed, mails);
         }
         await getDb().from("outlook_accounts").update({ last_pull: new Date().toISOString(), last_error: null }).eq("member", member.id);
         return json({ read: mails.length, days, tasks });
