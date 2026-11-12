@@ -82,7 +82,20 @@ const THEMES = {
   sky:      { name: 'Sky',      accent: '#3B8FCB', bgL: '#EDF4FA', bgD: '#0A1117', cardD: '#172029' },
   lemon:    { name: 'Lemon',    accent: '#A98410', bgL: '#FAF7E8', bgD: '#14120A', cardD: '#232014' },
   sage:     { name: 'Sage',     accent: '#5E8A5A', bgL: '#F0F4EE', bgD: '#0E130D', cardD: '#1B2219' },
+  ocean:    { name: 'Ocean',    accent: '#0B7A99', bgL: '#E9F4F7', bgD: '#061115', cardD: '#112027' },
+  forest:   { name: 'Forest',   accent: '#2E7D4F', bgL: '#EAF3EC', bgD: '#08130C', cardD: '#13221A' },
+  sunset:   { name: 'Sunset',   accent: '#E4572E', bgL: '#FFF1EA', bgD: '#180C08', cardD: '#2A1912' },
+  berry:    { name: 'Berry',    accent: '#9B2C6E', bgL: '#F8ECF3', bgD: '#14080F', cardD: '#25141E' },
+  gold:     { name: 'Gold',     accent: '#B8892E', bgL: '#F7F3EA', bgD: '#12100B', cardD: '#221F17' },
+  slate:    { name: 'Slate',    accent: '#4A5D73', bgL: '#EEF1F4', bgD: '#0B0E12', cardD: '#181D24' },
+  midnight: { name: 'Midnight', accent: '#6E7BFF', bgL: '#ECEEFB', bgD: '#05061A', cardD: '#12142E' },
+  mono:     { name: 'Mono',     accent: '#3A3A3C', bgL: '#F4F4F4', bgD: '#000000', cardD: '#1A1A1A' },
 };
+const CUSTOM_DEFAULT = { accent: '#0A84FF', bgL: '#F2F2F7', cardL: '#FFFFFF', bgD: '#000000', cardD: '#1C1C1E' };
+function customTheme() {
+  try { return { ...CUSTOM_DEFAULT, ...JSON.parse(pref('custom', '{}')) }; } catch { return { ...CUSTOM_DEFAULT }; }
+}
+const currentTheme = () => (pref('theme', 'classic') === 'custom' ? { name: 'Your own', ...customTheme() } : THEMES[pref('theme', 'classic')] || THEMES.classic);
 function isLight(hex) {
   const h = (hex || '').replace('#', '');
   if (h.length !== 6) return false;
@@ -103,12 +116,26 @@ function applyAppearance() {
   const root = document.documentElement;
   const mode = pref('mode', 'system');
   if (mode === 'system') delete root.dataset.theme; else root.dataset.theme = mode;
-  const t = THEMES[pref('theme', 'classic')] || THEMES.classic;
+  const t = currentTheme();
   let st = document.getElementById('theme-style');
   if (!st) { st = document.createElement('style'); st.id = 'theme-style'; document.head.appendChild(st); }
-  st.textContent = `:root{--accent:${t.accent};--bg:${t.bgL}}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:${t.bgD};--card:${t.cardD}}}
-:root[data-theme="dark"]{--bg:${t.bgD};--card:${t.cardD}}`;
+  // Text follows the background. If a card colour clashes with its background (dark card on a light page),
+  // it's blended towards the background's brightness so text stays readable on both.
+  const isLt = (c) => isLight(c) || /^#f/i.test(c);
+  const blend = (c, toward, amt) => { const h = (x) => [0, 2, 4].map((i) => parseInt(x.replace('#', '').slice(i, i + 2), 16)); const [a1, b1] = [h(c), h(toward)]; return '#' + a1.map((v, i) => Math.round(v + (b1[i] - v) * amt).toString(16).padStart(2, '0')).join(''); };
+  const fit = (card, bg) => (isLt(card) === isLt(bg) ? card : blend(card, isLt(bg) ? '#ffffff' : '#000000', 0.78));
+  const txt = (bg, darkMode) => {
+    if (isLt(bg) === !darkMode) return '';
+    return isLt(bg)
+      ? '--label:#000000;--label2:rgba(60,60,67,.62);--label3:rgba(60,60,67,.32);--sep:rgba(60,60,67,.16);--card2:rgba(0,0,0,.05);--seg-on:#FFFFFF;'
+      : '--label:#FFFFFF;--label2:rgba(235,235,245,.62);--label3:rgba(235,235,245,.32);--sep:rgba(255,255,255,.16);--card2:rgba(255,255,255,.08);--seg-on:rgba(255,255,255,.22);';
+  };
+  const custom = pref('theme', 'classic') === 'custom';
+  const lightVars = `--accent:${t.accent};--bg:${t.bgL};${t.cardL ? `--card:${fit(t.cardL, t.bgL)};` : ''}${custom ? txt(t.bgL, false) : ''}`;
+  const darkVars = `--bg:${t.bgD};--card:${custom ? fit(t.cardD, t.bgD) : t.cardD};${custom ? txt(t.bgD, true) : ''}`;
+  st.textContent = `:root{${lightVars}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){${darkVars}}}
+:root[data-theme="dark"]{${darkVars}}`;
   let bg = document.getElementById('bg');
   const img = pref('bg', null);
   if (img) {
@@ -919,7 +946,7 @@ function familyView() {
     <div class="group">
       <div class="field"><label>Mode</label><div class="seg" style="flex:1">${[['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([k, v]) => `<button class="${pref('mode', 'system') === k ? 'on' : ''}" data-a="setMode" data-v="${k}">${v}</button>`).join('')}</div></div>
       <div class="field col"><label>Countdowns show as</label>${boardSeg()}</div>
-      <div class="field col"><label>Theme</label><div class="themes">${Object.entries(THEMES).map(([k, t]) => `<button class="theme-dot ${pref('theme', 'classic') === k ? 'on' : ''}" data-a="setTheme" data-v="${k}" style="--a:${t.accent};--b:${t.bgL}"><span></span>${t.name}</button>`).join('')}</div></div>
+      <div class="field tap" data-a="openThemes"><label>Theme</label><span class="theme-now"><span class="tp-dot" style="--a:${currentTheme().accent};--b:${currentTheme().bgL};--d:${currentTheme().bgD}"></span>${esc(currentTheme().name)} <span class="muted">›</span></span></div>
       <div class="field col"><label>Background photo</label>
         ${pref('bg', null) ? `<div class="bg-preview" style="background-image:url('${pref('bg', '')}')"></div>
           <div class="dim-row"><span>Photo</span><input type="range" id="bg-dim" min="0" max="90" step="5" value="${pref('dim', '55')}" data-input="bgDim" aria-label="Fade the photo"><span>Faded</span></div>
@@ -1283,6 +1310,7 @@ function sheetHtml(s) {
     case 'import': return importSheet(s);
     case 'todo': return todoSheet(s);
     case 'alexa': return alexaSheet(s);
+    case 'themes': return themesSheet(s);
     case 'outlook': return outlookSheet(s);
     case 'countdown': return countdownSheet(s);
     case 'homeEdit': return homeEditSheet();
@@ -1694,6 +1722,37 @@ const ALEXA_SAYS = [
   ['How long until Center Parcs?', 'a live countdown on the Show'],
   ['What’s on today?', 'dinner, tasks, shopping and countdown at a glance'],
 ];
+/* ---------- Theme page ---------- */
+const THEME_KEYS = [['accent', 'Accent', 'Buttons, ticks and highlights'], ['bgL', 'Background', 'Light mode'], ['cardL', 'Cards', 'Light mode'], ['bgD', 'Background', 'Dark mode'], ['cardD', 'Cards', 'Dark mode']];
+function themePreview(t, darkMode) {
+  const bg = darkMode ? t.bgD : t.bgL, card = darkMode ? t.cardD : (t.cardL || '#FFFFFF');
+  const fg = isLight(card) || card.toLowerCase() === '#ffffff' ? '#111' : '#fff';
+  const sub = fg === '#111' ? 'rgba(0,0,0,.45)' : 'rgba(255,255,255,.5)';
+  return `<div class="tprev" style="background:${bg}">
+    <div class="tp-h" style="color:${fg === '#111' && !isLight(bg) ? '#fff' : isLight(bg) ? '#111' : '#fff'}">Lists</div>
+    <div class="tp-card" style="background:${card};color:${fg}">
+      <div class="tp-row"><i style="border-color:${t.accent};background:${t.accent}"></i><span>Milk</span></div>
+      <div class="tp-row"><i style="border-color:${sub}"></i><span>Book the MOT</span><b style="color:${sub}">Fri</b></div>
+    </div>
+    <div class="tp-btn" style="background:${t.accent};color:${ink(t.accent)}">Add</div>
+    <div class="tp-mode" style="color:${isLight(bg) ? 'rgba(0,0,0,.45)' : 'rgba(255,255,255,.5)'}">${darkMode ? 'Dark' : 'Light'}</div>
+  </div>`;
+}
+function themesSheet() {
+  const cur = pref('theme', 'classic'), t = currentTheme(), c = customTheme();
+  const tiles = Object.entries(THEMES).map(([k, x]) => `<button class="ttile ${cur === k ? 'on' : ''}" data-a="setTheme" data-v="${k}">
+      <span class="tt-sw"><i style="background:${x.bgL}"></i><i style="background:${x.bgD}"></i><b style="background:${x.accent}"></b></span>${x.name}</button>`).join('');
+  const own = `<button class="ttile ${cur === 'custom' ? 'on' : ''}" data-a="setTheme" data-v="custom"><span class="tt-sw"><i style="background:${c.bgL}"></i><i style="background:${c.bgD}"></i><b style="background:${c.accent}"></b></span>Your own</button>`;
+  const pickers = THEME_KEYS.map(([k, label, hint]) => `<label class="field tcol"><span class="tc-l"><b>${label}</b><small>${hint}</small></span><span class="tc-sw" style="--c:${c[k]}"><input type="color" value="${c[k]}" data-change="themeColour" data-k="${k}" aria-label="${label} — ${hint}"></span></label>`).join('');
+  return head('Theme', '<span></span>') + `
+    <div class="tprevs">${themePreview(t, false)}${themePreview(t, true)}</div>
+    <div class="section-label">Presets</div>
+    <div class="ttiles">${tiles}${own}</div>
+    <div class="section-label"><span>Your own colours</span>${pref('custom', null) ? '<button data-a="themeReset">Reset</button>' : ''}</div>
+    <div class="group">${pickers}</div>
+    <p class="hint">Tap a colour to change it — the app updates as you go. Text switches between black and white to suit the background, and a card colour that clashes is softened so it stays readable. ${cur !== 'custom' ? '<button class="link-btn" style="display:inline;margin:0;padding:0" data-a="themeCustomFrom">Start from the current theme</button>' : ''}</p>
+    <p class="hint">Saved on this phone, so everyone in the family can have their own.</p>`;
+}
 function alexaSheet(s) {
   const left = s.expires ? Math.max(0, Math.round((s.expires - Date.now()) / 60000)) : 0;
   const linked = s.linked === undefined ? '' : s.linked
@@ -2311,7 +2370,14 @@ const A = {
     } catch (e) { s.busy = false; renderSheets(true); toast(e.message); }
   },
   setMode: (el) => { setPref('mode', el.dataset.v); applyAppearance(); render(); },
-  setTheme: (el) => { setPref('theme', el.dataset.v); applyAppearance(); render(); },
+  setTheme: (el) => { setPref('theme', el.dataset.v); applyAppearance(); render(); renderSheets(true); },
+  openThemes: () => openSheet({ kind: 'themes' }),
+  themeCustomFrom: () => {
+    const t = currentTheme();
+    setPref('custom', JSON.stringify({ accent: t.accent, bgL: t.bgL, cardL: t.cardL || '#FFFFFF', bgD: t.bgD, cardD: t.cardD }));
+    setPref('theme', 'custom'); applyAppearance(); render(); renderSheets(true);
+  },
+  themeReset: () => { setPref('custom', null); if (pref('theme', 'classic') === 'custom') applyAppearance(); render(); renderSheets(true); },
   bgRemove: () => { setPref('bg', null); applyAppearance(); render(); toast('Background removed'); },
   install: () => openSheet({ kind: 'install' }),
   resetDemo: async () => { if (await ask('Put the demo data back to how it started?', 'Reset')) { store.reset(); reload(); toast('Demo reset'); } },
@@ -2385,6 +2451,10 @@ const ENTER = {
   },
 };
 const CHANGE = {
+  themeColour: (el) => {
+    const c = customTheme(); c[el.dataset.k] = el.value;
+    setPref('custom', JSON.stringify(c)); setPref('theme', 'custom'); applyAppearance(); render(); renderSheets(true);
+  },
   outlookPri: (el) => { const s = topSheet(); s.tasks[+el.dataset.i].pri = +el.value; },
   outlookDue: (el) => { const s = topSheet(); if (/^\d{4}-\d{2}-\d{2}$/.test(el.value)) s.tasks[+el.dataset.i].due = el.value; },
   itemText: (el) => { const v = el.value.trim(); if (v) upd('items', { id: el.dataset.id }, { text: v }); },

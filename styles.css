@@ -813,3 +813,30 @@ body.tv-mode #view { padding: 0 !important; background: #0B0B0F; }
 }
 :root[data-theme="dark"] .cal-cell { background: color-mix(in srgb, var(--bc) 26%, var(--bg)); }
 :root[data-theme="dark"] .cal-cell.later { background: color-mix(in srgb, var(--bc) 13%, var(--bg)); }
+
+/* ---------- Theme page ---------- */
+.theme-now { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; color: var(--label); }
+.tp-dot { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, var(--b) 0 40%, var(--d) 40% 70%, var(--a) 70%); box-shadow: inset 0 0 0 .5px rgba(0,0,0,.2); }
+.tprevs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tprev { position: relative; border-radius: 18px; padding: 12px; min-height: 150px; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.15); overflow: hidden; }
+.tp-h { font-weight: 800; font-size: 20px; margin-bottom: 8px; }
+.tp-card { border-radius: 12px; padding: 4px 10px; }
+.tp-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 13px; font-weight: 500; }
+.tp-row + .tp-row { border-top: .5px solid rgba(127,127,127,.25); }
+.tp-row i { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid; flex: none; }
+.tp-row span { flex: 1; }
+.tp-row b { font-size: 11px; font-weight: 500; }
+.tp-btn { margin-top: 10px; display: inline-block; padding: 5px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+.tp-mode { position: absolute; right: 12px; bottom: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.ttiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 6px; }
+.ttile { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--label2); padding: 6px 0; border-radius: 14px; }
+.ttile.on { color: var(--label); font-weight: 700; background: var(--fill); }
+.tt-sw { position: relative; display: flex; width: 50px; height: 50px; border-radius: 14px; overflow: hidden; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.18), var(--shadow); }
+.tt-sw i { flex: 1; }
+.tt-sw b { position: absolute; width: 22px; height: 22px; border-radius: 50%; left: 14px; top: 14px; box-shadow: 0 0 0 2px rgba(255,255,255,.85); }
+.ttile.on .tt-sw { box-shadow: 0 0 0 2.5px var(--accent); }
+.tcol { cursor: pointer; }
+.tc-l { display: flex; flex-direction: column; }
+.tc-l small { color: var(--label2); font-size: 12px; }
+.tc-sw { margin-left: auto; position: relative; width: 44px; height: 30px; border-radius: 9px; background: var(--c); box-shadow: inset 0 0 0 .5px rgba(0,0,0,.25); overflow: hidden; }
+.tc-sw input { position: absolute; inset: -8px; width: calc(100% + 16px); height: calc(100% + 16px); opacity: 0; cursor: pointer; border: 0; padding: 0; }

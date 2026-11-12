@@ -127,3 +127,6 @@ On the Fire TV open **Silk Browser**, go to `quickdraw10.github.io/mcgaw-lists/t
 A **Pull from inbox** button on your Work list (the “Ongoing Work To-Do List” if you have one). It reads the last 1/3/7 days of your work inbox (read-only), Claude picks out emails you need to act on or reply to, and you tick which become tasks — with priority and due date filled in, and a link back to the email. Nothing in Outlook is changed.
 
 Setup: run `supabase/outlook.sql`; deploy `supabase/functions/outlook/index.ts` as an Edge Function called `outlook` (JWT verification off); in Azure, let the existing app sign in work accounts, add the redirect `https://YOUR-PROJECT.supabase.co/functions/v1/outlook` and the **Mail.Read** permission; add a Claude API key as the `ANTHROPIC_API_KEY` secret. Then Family → Connect work Outlook.
+
+## Themes
+Family → Appearance → **Theme** opens the theme page: a live light/dark preview, 16 preset themes, and **Your own colours** (accent, background and cards for light and dark mode, with colour pickers). Text automatically stays readable. Saved per phone.
