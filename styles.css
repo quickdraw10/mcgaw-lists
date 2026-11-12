@@ -771,7 +771,7 @@ body.tv-mode #view { padding: 0 !important; background: #0B0B0F; }
 .cc-m .lst { color: var(--c); font-weight: 600; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- Outlook ---------- */
-.ob-bar { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; padding: 10px 12px; background: var(--card); border-radius: 14px; box-shadow: var(--shadow); }
+.ob-bar { display: flex; align-items: center; gap: 10px; margin: 22px 0 0; padding: 10px 12px; background: var(--card); border-radius: 14px; box-shadow: var(--shadow); }
 .ob-ico { flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: #0F6CBD; color: #fff; font-weight: 700; font-size: 14px; }
 .ob-txt { flex: 1; min-width: 0; font-size: 14px; line-height: 1.3; }
 .ob-txt b { display: block; font-size: 15px; }
@@ -785,3 +785,9 @@ body.tv-mode #view { padding: 0 !important; background: #0B0B0F; }
 .ob-meta select, .ob-meta input[type=date] { font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--sep); background: var(--card2); color: var(--label); }
 .spinner { width: 26px; height: 26px; margin: 0 auto 12px; border-radius: 50%; border: 3px solid var(--fill); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.due-quick { padding-top: 4px !important; padding-bottom: 12px !important; }
+.due-quick .chip { font-size: 14px; padding: 6px 12px; }
+.due-quick .chip i { font-style: normal; opacity: .65; }
+.field.tap { cursor: pointer; }
+.field.tap label { display: inline-flex; align-items: center; gap: 8px; }

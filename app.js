@@ -727,9 +727,21 @@ function shareSummary(l) {
   if (others.length === S.data.members.length - 1) return 'Everyone';
   return others.map((m) => m.name).join(', ');
 }
+// Your own order of lists on the home screen (press and hold to move; saved on this phone)
+function sortLists(ls) {
+  const order = pref('listOrder', []);
+  const at = (l) => { const i = order.indexOf(l.id); return i < 0 ? 1e6 : i; };
+  return ls.map((l, i) => [l, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map((x) => x[0]);
+}
+function saveListOrder(ids) {
+  const order = pref('listOrder', []).filter((id) => !ids.includes(id));
+  // keep this section's new order, slotted in front of everything else
+  setPref('listOrder', [...ids, ...order]);
+  render();
+}
 function listRow(l) {
   const others = listMembers(l).map((m) => m.id).filter((id) => id !== S.me);
-  return `<div class="row tap" data-a="go" data-h="#/list/${l.id}">
+  return `<div class="row tap" data-a="go" data-h="#/list/${l.id}" data-iid="${l.id}">
     <span class="tile-icon" style="--c:${listColour(l)}">${icon(TYPES[l.type].icon, 22)}</span>
     <div class="row-main"><div class="row-title">${esc(l.title)}</div><div class="row-sub">${listSubtitle(l)}</div></div>
     ${avatarStack(others, 22)}
@@ -772,10 +784,10 @@ function homeView() {
     if (!TYPES[id] || !S.data.lists.length) continue;
     if (hidden && S.filter !== id) continue;
     if (!chipsDone) { out += chips; chipsDone = true; }
-    const ls = lists.filter((l) => l.type === id);
+    const ls = sortLists(lists.filter((l) => l.type === id));
     if (!ls.length) continue;
     listShown++;
-    out += `<div class="section-label">${TYPES[id].name}</div><div class="group" style="--indent:64px">${ls.map(listRow).join('')}</div>`;
+    out += `<div class="section-label">${TYPES[id].name}</div><div class="group" style="--indent:64px" ${ls.length > 1 ? 'data-reorder="lists"' : ''}>${ls.map(listRow).join('')}</div>`;
   }
   if (!S.data.lists.length) out += `<div class="empty"><div class="big">No lists yet</div>Make a shopping list, a meal plan or a notice board, then choose who in the family can see it.<br><br><button class="btn" data-a="newList">${icon('plus', 20, 2.4)} New list</button></div>`;
   else if (!chipsDone) out += chips + '<p class="hint">All list sections are hidden. Pick a type above, or edit the home screen.</p>';
@@ -1032,7 +1044,7 @@ function todoView(l) {
   const open = items.filter((i) => !i.done), done = items.filter((i) => i.done);
   let body = priorityGroups(open, l);
   if (!open.length) body = `<div class="empty"><div class="big">Nothing to do</div>Add a task, then tap it to set a due date, assign it, or break it into sub-tasks.</div>`;
-  return outlookBar(l) + quickAdd(l, 'New task') + mineToggle(l) + body + doneSection(l, done, 'Completed');
+  return quickAdd(l, 'New task') + mineToggle(l) + body + doneSection(l, done, 'Completed') + outlookBar(l);
 }
 
 function priorityGroups(rows, l, sort = 'order') {
@@ -1049,6 +1061,22 @@ function priorityGroups(rows, l, sort = 'order') {
 }
 
 /* ---------- Work ---------- */
+// Changing a task's date also moves a countdown made from it (keeping its time of day)
+async function setItemDue(it, due) {
+  if (!it) return;
+  await upd('items', { id: it.id }, { due });
+  const cd = it.data?.cd && (S.data.countdowns || []).find((c) => c.id === it.data.cd);
+  if (cd && due) {
+    const t = new Date(cd.target), hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    await upd('countdowns', { id: cd.id }, { target: new Date(`${due}T${hm}`).toISOString() });
+  }
+}
+function cdShort(c) {
+  const ms = new Date(c.target) - Date.now();
+  if (ms <= 0) return 'Here!';
+  const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24;
+  return d >= 1 ? `${d} day${d === 1 ? '' : 's'}${d < 3 && h ? ` ${h}h` : ''} to go` : `${h}h ${Math.floor(ms / 6e4) % 60}m to go`;
+}
 /* ---------- Work: calendar by day, priority rows ---------- */
 const WORK_VIEWS = [['day', 'Today'], ['3', '3 days'], ['week', 'Week'], ['list', 'List']];
 const PRI_BANDS = [[3, 'Urgent & important', 'U&I', 'red'], [2, 'Urgent', 'Urgent', 'orange'], [1, 'Important', 'Important', 'blue'], [0, 'Everything else', 'Other', 'grey']];
@@ -1072,7 +1100,7 @@ function workView(l) {
   if (st === 'done') {
     const list = done.length ? priorityGroups(done.slice(0, 40), l, 'order') : '<div class="empty">Nothing finished yet.</div>';
     const clear = done.length && isAdmin(l) ? `<button class="link-btn" data-a="clearDone" data-id="${l.id}">Clear finished tasks</button>` : '';
-    return outlookBar(l) + quickAdd(l, 'New work task') + workDueChips(l) + seg + list + clear + mine;
+    return quickAdd(l, 'New work task') + workDueChips(l) + seg + list + clear + outlookBar(l) + mine;
   }
   const views = `<div class="seg small cal-views">${WORK_VIEWS.map(([k, t]) => `<button class="${view === k ? 'on' : ''}" data-a="setWorkView" data-v="${k}">${t}</button>`).join('')}</div>`;
   let body;
@@ -1081,7 +1109,7 @@ function workView(l) {
     const sortBar = active.length > 1 ? `<div class="sort-row"><span class="muted">Sort</span><div class="seg small"><button class="${sort === 'order' ? 'on' : ''}" data-a="setWorkSort" data-v="order">My order</button><button class="${sort === 'due' ? 'on' : ''}" data-a="setWorkSort" data-v="due">Due date</button></div></div>` : '';
     body = sortBar + (active.length ? priorityGroups(active, l, sort) : '<div class="empty">Nothing to do. Add a task above.</div>');
   } else body = workCalendar(l, active, view === 'day' ? 1 : view === '3' ? 3 : 7);
-  return outlookBar(l) + quickAdd(l, 'New work task') + workDueChips(l) + seg + views + body + mine;
+  return quickAdd(l, 'New work task') + workDueChips(l) + seg + views + body + outlookBar(l) + mine;
 }
 function workCalendar(l, items, n, multi = false) {
   const t = today();
@@ -1354,6 +1382,13 @@ function itemSheet(s) {
   const f = [];
   if (['todo', 'work'].includes(T)) {
     f.push(`<div class="field"><label>Due</label><input type="date" value="${it.due || ''}" data-change="itemField" data-f="due" data-id="${it.id}"></div>`);
+    f.push(`<div class="field col due-quick"><div class="due-chips" style="margin:0">${DUE_SHORTCUTS().map(([k, label, d]) => `<button class="chip ${it.due === d ? 'on' : ''}" data-a="setDue" data-id="${it.id}" data-v="${d}">${label}${k === 'week' ? ` <i>· ${new Date(d + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' })}</i>` : ''}</button>`).join('')}${it.due ? `<button class="chip" data-a="setDue" data-id="${it.id}" data-v="">No date</button>` : ''}</div></div>`);
+    if (it.due && !missing('countdowns')) {
+      const cd = it.data?.cd && (S.data.countdowns || []).find((c) => c.id === it.data.cd);
+      f.push(cd
+        ? `<div class="field tap" data-a="editCd" data-id="${cd.id}"><label>${icon('cal', 16, 2.2)} Countdown</label><span class="muted">${esc(cdShort(cd))} ›</span></div>`
+        : `<div class="field tap" data-a="taskCountdown" data-id="${it.id}"><label style="color:var(--accent)">${icon('cal', 16, 2.2)} Make a countdown</label><span class="muted">›</span></div>`);
+    }
     f.push(`<div class="field col"><label>Priority</label><div class="pri-grid">${PRIORITY.map((p) => `<button class="pri ${p.cls || ''} ${priOf(it) === p.v ? 'on' : ''}" data-a="setPriority" data-id="${it.id}" data-v="${p.v}">${p.label}</button>`).join('')}</div></div>`);
   }
   if (T === 'work' && !parent) {
@@ -1936,6 +1971,12 @@ const A = {
     upd('items', { id: it.id }, { assignees: ids.every((x) => it.assignees.includes(x)) ? [] : ids });
     renderSheets(true);
   },
+  setDue: async (el) => { await setItemDue(getItem(el.dataset.id), el.dataset.v || null); renderSheets(true); },
+  taskCountdown: (el) => {
+    const it = getItem(el.dataset.id);
+    if (!it || !it.due) return;
+    openSheet({ kind: 'countdown', itemId: it.id, focus: null, draft: { title: it.text, date: it.due, time: '17:00', colour: null, list_id: it.list_id, members: [], kind: 'general', style: 'flip' } });
+  },
   setPriority: (el) => { upd('items', { id: el.dataset.id }, { priority: +el.dataset.v }); renderSheets(true); },
   giftBuyer: (el) => { const it = getItem(el.dataset.id), g = giftOf(it.id) || {}; setGift(it, { buyer: g.buyer === el.dataset.m ? null : el.dataset.m }); renderSheets(true); },
   workStatus: (el) => { const v = el.dataset.v; upd('items', { id: el.dataset.id }, { status: v, done: v === 'done', done_by: v === 'done' ? S.me : null, done_at: v === 'done' ? new Date().toISOString() : null }); renderSheets(true); },
@@ -2347,7 +2388,7 @@ const CHANGE = {
   outlookPri: (el) => { const s = topSheet(); s.tasks[+el.dataset.i].pri = +el.value; },
   outlookDue: (el) => { const s = topSheet(); if (/^\d{4}-\d{2}-\d{2}$/.test(el.value)) s.tasks[+el.dataset.i].due = el.value; },
   itemText: (el) => { const v = el.value.trim(); if (v) upd('items', { id: el.dataset.id }, { text: v }); },
-  itemField: (el) => upd('items', { id: el.dataset.id }, { [el.dataset.f]: el.value || null }),
+  itemField: (el) => el.dataset.f === 'due' ? setItemDue(getItem(el.dataset.id), el.value || null) : upd('items', { id: el.dataset.id }, { [el.dataset.f]: el.value || null }),
   giftFor: async (el) => {
     const it = getItem(el.dataset.id);
     if (isMyWish(it)) { renderSheets(true); return; }
@@ -2524,6 +2565,7 @@ function pressEnd() {
   const ids = [...DRAG.group.querySelectorAll(':scope > [data-iid]')].map((e) => e.dataset.iid);
   if (ids.join() !== DRAG.before) {
     if (DRAG.group.dataset.reorder === 'home') saveHomeOrder(ids);
+    else if (DRAG.group.dataset.reorder === 'lists') saveListOrder(ids);
     else savePositions(ids, DRAG.group.dataset.order === 'desc');
   }
   const pending = DRAG.pending;
@@ -2821,7 +2863,13 @@ Object.assign(A, {
     const row = { title: d.title.trim(), target: new Date(`${d.date}T${d.time || '00:00'}`).toISOString(), colour: d.colour, list_id: d.list_id || null, members: d.members, kind: d.kind || 'general', style: cdStyleOf(d.style) };
     S.sheets.pop();
     if (s.id) await upd('countdowns', { id: s.id }, row);
-    else await ins('countdowns', { id: uid(), owner: S.me, created_at: new Date().toISOString(), ...row });
+    else {
+      const id = uid();
+      await ins('countdowns', { id, owner: S.me, created_at: new Date().toISOString(), ...row });
+      // Made from a task: remember it, so changing the task's date moves the countdown too
+      const it = s.itemId && getItem(s.itemId);
+      if (it) await upd('items', { id: it.id }, { data: { ...(it.data || {}), cd: id } });
+    }
     toast(s.id ? 'Countdown saved' : 'Countdown added');
   },
   deleteCd: async () => {
