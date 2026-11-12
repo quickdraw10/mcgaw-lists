@@ -1139,7 +1139,7 @@ function workCalendar(l, items, n, multi = false) {
   const bands = PRI_BANDS.map(([p, label, short, cls]) => {
     const inBand = items.filter((i) => priOf(i) === p);
     return `<div class="cal-band ${inBand.length ? '' : 'is-empty'}"><div class="cal-bl ${cls}"><span>${label}</span>${inBand.length ? `<i>${inBand.length}</i>` : ''}</div>
-      <div class="cal-row">${cols.map((c) => `<div class="cal-cell ${c.key === 'later' ? 'later' : ''}" data-cell data-due="${c.due}" data-pri="${p}">${inBand.filter((i) => colOf(i) === c.key).sort(sortIn).map(card).join('')}</div>`).join('')}</div></div>`;
+      <div class="cal-row">${cols.map((c) => `<div class="cal-cell b-${cls} ${c.key === 'later' ? 'later' : ''}" data-cell data-due="${c.due}" data-pri="${p}">${inBand.filter((i) => colOf(i) === c.key).sort(sortIn).map(card).join('')}</div>`).join('')}</div></div>`;
   }).join('');
   return `<div class="cal n${n}"><div class="cal-scroll"><div class="cal-grid" style="--cols:${cols.length}"><div class="cal-row cal-head">${head}</div>${bands}</div></div>
     <p class="hint" style="margin:10px 4px 0">Press and hold a task to move it to another day or priority. Overdue tasks sit in Today.</p></div>`;
