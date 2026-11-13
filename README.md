@@ -139,3 +139,6 @@ On a laptop or desktop (1000px+ wide) the app switches to a sidebar, flows list 
 
 ## Alexa guide
 `alexa-guide.html` — every Alexa command, grouped, printable on one A4 sheet. Linked from Family → Alexa.
+
+## Spreadsheet import
+Family → **Import a spreadsheet** (or Import → Spreadsheet). Reads an Excel/CSV sheet with an **Action** column (plus optional person, **Due**, **Status**) — e.g. the weekly Commercial Meeting actions. Picks your rows (and whole-team ones), turns “ASAP / Overdue / This week / Fri 13 Nov / Before Mon 16 Nov / Ongoing” into dates and priorities, and lets you review before adding. Re-importing skips actions already added. The reader (`vendor/xlsx.full.min.js`, SheetJS, Apache-2.0) ships with the app.

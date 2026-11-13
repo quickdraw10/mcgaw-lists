@@ -872,3 +872,7 @@ body.tv-mode #view { padding: 0 !important; background: #0B0B0F; }
 @media (min-width: 1500px) {
   .cal-cell { min-height: 64px; }
 }
+
+/* Drop-down lists: readable in every theme (Windows and Android draw the list themselves) */
+select option, select optgroup { background-color: var(--card); color: var(--label); }
+select option:checked { background-color: var(--accent); color: #fff; }

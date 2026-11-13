@@ -127,8 +127,8 @@ function applyAppearance() {
   const txt = (bg, darkMode) => {
     if (isLt(bg) === !darkMode) return '';
     return isLt(bg)
-      ? '--label:#000000;--label2:rgba(60,60,67,.62);--label3:rgba(60,60,67,.32);--sep:rgba(60,60,67,.16);--card2:rgba(0,0,0,.05);--seg-on:#FFFFFF;'
-      : '--label:#FFFFFF;--label2:rgba(235,235,245,.62);--label3:rgba(235,235,245,.32);--sep:rgba(255,255,255,.16);--card2:rgba(255,255,255,.08);--seg-on:rgba(255,255,255,.22);';
+      ? '--label:#000000;--label2:rgba(60,60,67,.62);--label3:rgba(60,60,67,.32);--sep:rgba(60,60,67,.16);--card2:rgba(0,0,0,.05);--seg-on:#FFFFFF;color-scheme:light;'
+      : '--label:#FFFFFF;--label2:rgba(235,235,245,.62);--label3:rgba(235,235,245,.32);--sep:rgba(255,255,255,.16);--card2:rgba(255,255,255,.08);--seg-on:rgba(255,255,255,.22);color-scheme:dark;';
   };
   const custom = pref('theme', 'classic') === 'custom';
   const lightVars = `--accent:${t.accent};--bg:${t.bgL};${t.cardL ? `--card:${fit(t.cardL, t.bgL)};` : ''}${custom ? txt(t.bgL, false) : ''}`;
@@ -943,6 +943,7 @@ function familyView() {
       ${todoRow()}
       ${outlookRow()}
       <div class="row tap" data-a="openImport" data-tab="paste"><span class="tile-icon sm" style="--c:#25A366">${icon('list', 18)}</span><div class="row-main"><div class="row-title">Paste a list</div><div class="row-sub">From WhatsApp, Notes, an email…</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
+      <div class="row tap" data-a="openImport" data-tab="sheet"><span class="tile-icon sm" style="--c:#1D6F42">${icon('list', 18)}</span><div class="row-main"><div class="row-title">Import a spreadsheet</div><div class="row-sub">Meeting actions from Excel — yours go into your Work list</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>
     </div>
     <div class="section-label">Alexa</div>
     <div class="group">
@@ -1563,10 +1564,120 @@ function parsePasted(text) {
   }
   return out;
 }
+/* ---------- Spreadsheet import (e.g. the weekly meeting actions) ---------- */
+function loadSheetJS() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise((ok, bad) => {
+    const sc = document.createElement('script');
+    sc.src = 'vendor/xlsx.full.min.js';
+    sc.onload = () => ok(window.XLSX); sc.onerror = () => bad(new Error('Couldn’t load the spreadsheet reader — check the connection'));
+    document.head.appendChild(sc);
+  });
+}
+const MON3 = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+// "ASAP", "Overdue (12 Nov)", "Fri 13 Nov", "w/c 16 Nov", "Before Mar '27", "Ongoing" → a date and a priority
+function readDue(raw, ref = new Date()) {
+  const t0 = ymd(ref);
+  if (raw instanceof Date) { const d = ymd(raw); return { due: d, pri: d <= ymd(addDays(ref, 2)) ? 2 : d <= ymd(addDays(ref, 7)) ? 1 : 0 }; }
+  const t = String(raw || '').toLowerCase().replace(/[’']/g, "'").trim();
+  if (!t) return { due: null, pri: 0 };
+  if (/overdue/.test(t)) return { due: t0, pri: 3 };
+  if (/asap|urgent|immediately|today|tonight/.test(t)) return { due: t0, pri: 2 };
+  if (/tomorrow/.test(t)) return { due: ymd(addDays(ref, 1)), pri: 2 };
+  if (/next week/.test(t)) return { due: nextFriday(addDays(ref, 7)), pri: 1 };
+  if (/this week|end of (the )?week|by friday/.test(t)) return { due: nextFriday(ref), pri: 1 };
+  // day + month, e.g. "13 nov", "12–13 nov" (uses the last day), "16th november"
+  const all = [...t.matchAll(/(\d{1,2})(?:st|nd|rd|th)?\s*(?:[–-]\s*(\d{1,2})(?:st|nd|rd|th)?\s*)?([a-z]{3})[a-z]*\.?(?:\s*'?(\d{2,4}))?/g)].filter((m) => MON3.includes(m[3]));
+  let due = null;
+  if (all.length) {
+    const m = all[all.length - 1];
+    let y = m[4] ? +m[4] : ref.getFullYear(); if (y < 100) y += 2000;
+    let d = new Date(y, MON3.indexOf(m[3]), +(m[2] || m[1]), 12);
+    if (!m[4] && d < addDays(ref, -60)) d = new Date(y + 1, d.getMonth(), d.getDate(), 12);
+    due = ymd(d);
+  } else {
+    const mo = t.match(/\b([a-z]{3})[a-z]*\s*'?(\d{2,4})\b/);
+    if (mo && MON3.includes(mo[1])) { let y = +mo[2]; if (y < 100) y += 2000; due = ymd(new Date(y, MON3.indexOf(mo[1]), 1, 12)); }
+  }
+  if (!due) return { due: null, pri: 0 };
+  // "Before Mon 16 Nov" → the working day before (Fri 13 Nov)
+  if (/before/.test(t)) { const d = new Date(due + 'T12:00'); do { d.setDate(d.getDate() - 1); } while ([0, 6].includes(d.getDay())); due = ymd(d) < t0 ? t0 : ymd(d); }
+  const pri = due <= ymd(addDays(ref, 2)) ? 2 : due <= ymd(addDays(ref, 7)) ? 1 : 0;
+  return { due, pri };
+}
+async function xlRead(s, file) {
+  s.xlBusy = true; s.xlError = ''; renderSheets(true);
+  try {
+    const X = await loadSheetJS();
+    const wb = X.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const grid = X.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: false });
+    const txt = (v) => (v == null ? '' : v instanceof Date ? v : String(v).trim());
+    // Header row: the one with an "Action" column
+    const hi = grid.findIndex((r) => r.some((c) => /^actions?$|^task/i.test(String(c || '').trim())));
+    if (hi < 0) throw new Error('Couldn’t find an “Action” column in that sheet');
+    const H = grid[hi].map((c) => String(c || '').toLowerCase());
+    const col = (re, not) => H.findIndex((h) => re.test(h) && !(not && not.test(h)));
+    const cA = col(/^actions?$|task/), cW = col(/member|name|who|owner|person/), cD = col(/due|when|deadline|date/), cS = col(/status/);
+    let meeting = null, title = '';
+    for (const r of grid.slice(0, hi)) {
+      const i = r.findIndex((c) => /date of meeting|meeting date|^date:?$/i.test(String(c || '')));
+      if (i >= 0) { const v = r.slice(i + 1).find((c) => c); if (v instanceof Date) meeting = ymd(v); else if (v) meeting = readDue(v).due; }
+      const tt = r.find((c) => typeof c === 'string' && /meeting|actions/i.test(c) && !/date of/i.test(c));
+      if (tt && !title) title = tt.replace(/\s*actions?\s*$/i, '').trim();
+    }
+    let who = '';
+    const rows = [];
+    for (const r of grid.slice(hi + 1)) {
+      if (cW >= 0 && txt(r[cW])) who = String(r[cW]).trim();
+      const text = String(txt(r[cA]) || '');
+      if (!text || /^no actions/i.test(text)) continue;
+      if (cS >= 0 && /done|closed|complete|cancel/i.test(String(r[cS] || ''))) continue;
+      const dueRaw = cD >= 0 ? r[cD] : null;
+      const { due, pri } = readDue(dueRaw);
+      rows.push({ who: who || 'Unassigned', text, dueText: dueRaw instanceof Date ? fmtDue(ymd(dueRaw)) : String(dueRaw || ''), due, pri, key: `${meeting || ''}|${who}|${text}`.toLowerCase(), pick: true });
+    }
+    if (!rows.length) throw new Error('No actions found in that sheet');
+    const people = [...new Set(rows.map((r) => r.who))];
+    const me = member(S.me);
+    const mine = people.find((p) => xnorm(p) === xnorm(`${me?.name || ''} mcgaw`)) || people.find((p) => xnorm(p).split(' ').includes(xnorm(me?.name || '')) && /mcgaw/i.test(p)) || people.find((p) => xnorm(p).split(' ')[0] === xnorm(me?.name || '')) || people[0];
+    s.xl = { rows, people, who: mine, withAll: true, meeting, title: title || 'the meeting', file: file.name };
+    xlFilter(s);
+  } catch (e) { s.xlError = e.message; }
+  s.xlBusy = false; renderSheets(true);
+}
+const xnorm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const xlVisible = (s) => (s.xl ? s.xl.rows.filter((r) => r.who === s.xl.who || (s.xl.withAll && /^(all|everyone|whole team|all team)/i.test(r.who))) : []);
+function xlFilter(s) {
+  const seen = new Set(S.data.items.filter((i) => i.list_id === s.xlTarget && i.data?.source === 'meeting').map((i) => i.data.key));
+  for (const r of s.xl.rows) { r.dupe = seen.has(r.key); if (r.dupe) r.pick = false; }
+}
+function sheetImportBody(s, targets) {
+  if (!s.xlTarget) s.xlTarget = (outlookTarget() || targets.find((l) => l.type === 'work') || targets[0] || {}).id;
+  const target = `<div class="group"><div class="field"><label>Add to</label><select data-change="xlTarget">${targets.map((l) => `<option value="${l.id}" ${s.xlTarget === l.id ? 'selected' : ''}>${esc(l.title)}</option>`).join('')}</select></div></div>`;
+  const pickFile = `<input type="file" id="xl-file" accept=".xlsx,.xls,.csv" data-change="xlFile" style="display:none">
+    <button class="btn ${s.xl ? 'secondary' : ''}" style="margin-top:12px" data-a="xlChoose" ${s.xlBusy ? 'disabled' : ''}>${s.xlBusy ? 'Reading…' : s.xl ? `Choose a different file` : 'Choose a spreadsheet'}</button>`;
+  if (!s.xl) return target + pickFile + `${s.xlError ? `<p class="hint" style="color:var(--red)">${esc(s.xlError)}</p>` : ''}<p class="hint">Excel or CSV with a column called <b>Action</b> — and optionally who it’s for, <b>Due</b> and <b>Status</b>. Like your weekly Commercial Meeting actions sheet. Words like “ASAP”, “Overdue”, “This week” or “Fri 13 Nov” become due dates and priorities.</p>`;
+  const rows = xlVisible(s);
+  const n = rows.filter((r) => r.pick).length;
+  const hasAll = s.xl.people.some((p) => /^(all|everyone|whole team|all team)/i.test(p));
+  const when = s.xl.meeting ? new Date(s.xl.meeting + 'T12:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
+  return target + `<p class="hint" style="margin:10px 4px 0"><b>${esc(s.xl.file)}</b>${when ? ` · meeting on ${when}` : ''}</p>
+    <div class="group" style="margin-top:10px"><div class="field"><label>Whose actions</label><select data-change="xlWho">${s.xl.people.filter((p) => !/^(all|everyone|whole team|all team)/i.test(p)).map((p) => `<option ${p === s.xl.who ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
+      ${hasAll ? `<div class="field tap" data-a="xlAll"><label>Include whole-team actions</label><span style="flex:1"></span><span class="switch ${s.xl.withAll ? 'on' : ''}"></span></div>` : ''}</div>
+    <div class="group" style="margin-top:12px">${rows.map((r, i) => `<div class="row ob-item ${r.pick ? '' : 'off'}">
+      <button class="check ${r.pick ? 'on' : ''}" data-a="xlPick" data-i="${s.xl.rows.indexOf(r)}" aria-label="Include"></button>
+      <div class="row-main" style="cursor:default"><div class="row-title">${esc(r.text)}</div><div class="row-sub">${r.dueText ? `Due: ${esc(r.dueText)}` : 'No due date given'}${r.who !== s.xl.who ? ` · ${esc(r.who)}` : ''}${r.dupe ? ' · already added' : ''}</div>
+        <div class="ob-meta"><select data-change="xlPri" data-i="${i}" aria-label="Priority">${[3, 2, 1, 0].map((v) => `<option value="${v}" ${v === r.pri ? 'selected' : ''}>${PRI_BANDS.find((b) => b[0] === v)[1]}</option>`).join('')}</select>
+        <input type="date" value="${r.due || ''}" data-change="xlDue" data-i="${i}" aria-label="Due date"></div></div></div>`).join('') || '<div class="empty">No actions for this person.</div>'}</div>
+    <button class="btn" style="margin-top:16px" data-a="xlAdd" ${n ? '' : 'disabled'}>${n ? `Add ${n} action${n === 1 ? '' : 's'} to ${esc(getList(s.xlTarget)?.title || 'list')}` : 'Tick an action to add it'}</button>
+    ${pickFile}`;
+}
 function importSheet(s) {
   const targets = S.data.lists.filter((l) => IMPORTABLE.includes(l.type));
-  const tabs = `<div class="seg" style="margin:4px 0 14px">${[['todo', 'Microsoft To Do'], ['paste', 'Paste a list']].map(([k, v]) => `<button class="${s.tab === k ? 'on' : ''}" data-a="importTab" data-v="${k}">${v}</button>`).join('')}</div>`;
+  const tabs = `<div class="seg" style="margin:4px 0 14px">${[['todo', 'Microsoft To Do'], ['paste', 'Paste a list'], ['sheet', 'Spreadsheet']].map(([k, v]) => `<button class="${s.tab === k ? 'on' : ''}" data-a="importTab" data-v="${k}">${v}</button>`).join('')}</div>`;
   let html = head('Import', '<span></span>') + tabs;
+  if (s.tab === 'sheet') return html + sheetImportBody(s, targets);
   if (s.tab === 'paste') {
     const n = parsePasted(s.text || '').length;
     html += `<div class="group"><div class="field"><label>Add to</label><select data-input="importField" data-f="target">${targets.map((l) => `<option value="${l.id}" ${s.target === l.id ? 'selected' : ''}>${esc(l.title)}</option>`).join('')}</select></div></div>
@@ -2313,6 +2424,25 @@ const A = {
     openSheet({ kind: 'import', tab: el.dataset.tab || 'todo', target: el.dataset.id || targets[0]?.id, text: '', token: '', focus: el.dataset.tab === 'paste' ? 'imp-text' : null });
   },
   importTab: (el) => { topSheet().tab = el.dataset.v; renderSheets(true); },
+  xlChoose: () => document.getElementById('xl-file')?.click(),
+  xlPick: (el) => { const s = topSheet(); const r = s.xl.rows[+el.dataset.i]; r.pick = !r.pick; renderSheets(true); },
+  xlAll: () => { const s = topSheet(); s.xl.withAll = !s.xl.withAll; xlFilter(s); renderSheets(true); },
+  xlAdd: async () => {
+    const s = topSheet(), l = getList(s.xlTarget);
+    const rows = xlVisible(s).filter((r) => r.pick);
+    if (!l || !rows.length) return;
+    const base = Date.now() / 1000;
+    const when = s.xl.meeting ? new Date(s.xl.meeting + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+    const items = rows.map((r, i) => newItem(l, r.text, {
+      priority: r.pri, due: r.due, ...(l.type === 'work' ? { status: 'todo' } : {}), assignees: [S.me],
+      notes: [`From ${s.xl.title || 'the meeting'}${when ? ' · ' + when : ''}`, r.dueText ? `Due: ${r.dueText}` : '', r.who === 'All team' ? 'Whole-team action' : ''].filter(Boolean).join('\n'),
+      data: { source: 'meeting', key: r.key }, position: base + i / 1000,
+    }));
+    closeSheet();
+    await ins('items', items);
+    toast(`Added ${items.length} action${items.length === 1 ? '' : 's'} to ${l.title}`);
+    location.hash = '#/list/' + l.id;
+  },
   importPaste: async () => {
     const s = topSheet(), l = getList(s.target);
     if (!l) return toast('Choose a list to add to');
@@ -2464,6 +2594,11 @@ const ENTER = {
   },
 };
 const CHANGE = {
+  xlFile: (el) => { const f = el.files && el.files[0]; if (f) xlRead(topSheet(), f); },
+  xlWho: (el) => { const s = topSheet(); s.xl.who = el.value; xlFilter(s); renderSheets(true); },
+  xlTarget: (el) => { const s = topSheet(); s.xlTarget = el.value; xlFilter(s); renderSheets(true); },
+  xlPri: (el) => { xlVisible(topSheet())[+el.dataset.i].pri = +el.value; },
+  xlDue: (el) => { if (/^\d{4}-\d{2}-\d{2}$/.test(el.value) || !el.value) xlVisible(topSheet())[+el.dataset.i].due = el.value || null; },
   themeColour: (el) => {
     const c = customTheme(); c[el.dataset.k] = el.value;
     setPref('custom', JSON.stringify(c)); setPref('theme', 'custom'); applyAppearance(); render(); renderSheets(true);
