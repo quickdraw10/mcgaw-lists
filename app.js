@@ -709,14 +709,19 @@ setInterval(() => { const c = document.querySelector('[data-clock]'); if (c) c.t
 let TV_DAY = today();
 setInterval(() => { if (route().name === 'tv' && today() !== TV_DAY) { TV_DAY = today(); render(); } }, 60000);
 
+// Laptop and desktop: a sidebar instead of the bottom tab bar, and wider layouts
+const WIDE = matchMedia('(min-width: 1000px)');
+WIDE.addEventListener?.('change', () => { if (S.me) render(); });
 function renderTabs(r) {
   const tb = $('#tabbar');
-  if (!S.me || ['list', 'countdowns', 'budget', 'tv'].includes(r.name)) { tb.className = 'hide'; tb.innerHTML = ''; return; }
+  const wide = WIDE.matches;
+  document.body.classList.toggle('side', !!(wide && S.me && r.name !== 'tv'));
+  if (!S.me || r.name === 'tv' || (!wide && ['list', 'countdowns', 'budget'].includes(r.name))) { tb.className = 'hide'; tb.innerHTML = ''; return; }
   tb.className = '';
   const mine = myOpenTasks().length;
   const u = unreadCount();
   const tab = (key, hash, ic, label, badge) => `<button class="${r.name === key ? 'on' : ''}" data-a="go" data-h="${hash}">${icon(ic, 26, 1.8)}${badge ? `<span class="badge">${badge}</span>` : ''}<span>${label}</span></button>`;
-  tb.innerHTML = tab('home', '#/', 'house', 'Lists') + tab('mine', '#/mine', 'person', 'My tasks', mine || '') + tab('activity', '#/activity', 'bell', 'Activity', u || '') + tab('family', '#/family', 'people', 'Family');
+  tb.innerHTML = (wide ? '<div class="side-brand">McGaw Lists</div>' : '') + tab('home', '#/', 'house', 'Lists') + tab('mine', '#/mine', 'person', 'My tasks', mine || '') + tab('activity', '#/activity', 'bell', 'Activity', u || '') + tab('family', '#/family', 'people', 'Family');
 }
 
 /* ---------- Home ---------- */
@@ -804,20 +809,22 @@ function homeView() {
     <button class="tile" data-a="noticeTile"><div class="top"><span class="tile-icon sm" style="--c:${TYPES.notice.colour}">${icon('pin', 18)}</span><span class="num">${unseen}</span></div><div class="lbl">New notices</div></button>
   </div>`;
   const chips = `<div class="chips" style="margin-top:14px">${chip('all', 'All')}${chip('shared', 'Shared')}${chip('mine', 'Just me')}${usedTypes.map((t) => chip(t, TYPES[t].name, TYPES[t].colour)).join('')}</div>`;
-  let out = '', chipsDone = false, listShown = 0;
+  let out = '', chipsDone = false, listShown = 0, flow = [];
+  const flush = () => { if (flow.length) { out += `<div class="flow">${flow.join('')}</div>`; flow = []; } };
   for (const id of lay.order) {
     const hidden = lay.hidden.includes(id);
-    if (id === 'tiles') { if (!hidden) out += tiles; continue; }
-    if (id === 'budget') { if (!hidden && canBudget()) out += budgetTile(); continue; }
-    if (id === 'countdowns') { if (!hidden) out += homeCountdowns(); continue; }
+    if (id === 'tiles') { flush(); if (!hidden) out += tiles; continue; }
+    if (id === 'budget') { flush(); if (!hidden && canBudget()) out += budgetTile(); continue; }
+    if (id === 'countdowns') { flush(); if (!hidden) out += homeCountdowns(); continue; }
     if (!TYPES[id] || !S.data.lists.length) continue;
     if (hidden && S.filter !== id) continue;
-    if (!chipsDone) { out += chips; chipsDone = true; }
+    if (!chipsDone) { flush(); out += chips; chipsDone = true; }
     const ls = sortLists(lists.filter((l) => l.type === id));
     if (!ls.length) continue;
     listShown++;
-    out += `<div class="section-label">${TYPES[id].name}</div><div class="group" style="--indent:64px" ${ls.length > 1 ? 'data-reorder="lists"' : ''}>${ls.map(listRow).join('')}</div>`;
+    flow.push(`<div class="fsec"><div class="section-label">${TYPES[id].name}</div><div class="group" style="--indent:64px" ${ls.length > 1 ? 'data-reorder="lists"' : ''}>${ls.map(listRow).join('')}</div></div>`);
   }
+  flush();
   if (!S.data.lists.length) out += `<div class="empty"><div class="big">No lists yet</div>Make a shopping list, a meal plan or a notice board, then choose who in the family can see it.<br><br><button class="btn" data-a="newList">${icon('plus', 20, 2.4)} New list</button></div>`;
   else if (!chipsDone) out += chips + '<p class="hint">All list sections are hidden. Pick a type above, or edit the home screen.</p>';
   else if (!listShown) out += '<div class="empty">No lists match that filter.</div>';
@@ -1061,8 +1068,9 @@ function shoppingView(l) {
   let body = '';
   for (const a of AISLES) {
     const rows = open.filter((i) => (i.category || 'Other') === a);
-    if (rows.length) body += `<div class="section-label">${a}</div><div class="group" data-reorder>${rows.map((i) => itemRow(i, l)).join('')}</div>`;
+    if (rows.length) body += `<div class="fsec"><div class="section-label">${a}</div><div class="group" data-reorder>${rows.map((i) => itemRow(i, l)).join('')}</div></div>`;
   }
+  if (body) body = `<div class="flow">${body}</div>`;
   if (!open.length) body = `<div class="empty"><div class="big">${done.length ? 'Everything’s in the trolley 🛒' : 'Nothing on the list'}</div>Type what you need — try “2 milk” or “500g mince”. Items are sorted into aisles automatically.</div>`;
   return quickAdd(l, 'Add an item') + body + doneSection(l, done, 'In the trolley') + pastSection(l);
 }
@@ -1085,9 +1093,9 @@ function priorityGroups(rows, l, sort = 'order') {
     const g = rows.filter((i) => priOf(i) === p).sort(sort === 'due' ? byDue : (a, b) => a.position - b.position);
     const info = PRIORITY.find((x) => x.v === p);
     const label = p ? info.label : used.length > 1 ? 'Everything else' : '';
-    html += `${label ? `<div class="section-label"><span class="pri-label ${info.cls || ''}">${label}</span><span class="muted">${g.length}</span></div>` : '<div style="height:14px"></div>'}<div class="group"${sort === 'due' ? '' : ' data-reorder'}>${g.map((i) => itemRow(i, l)).join('')}</div>`;
+    html += `<div class="fsec">${label ? `<div class="section-label"><span class="pri-label ${info.cls || ''}">${label}</span><span class="muted">${g.length}</span></div>` : '<div style="height:14px"></div>'}<div class="group"${sort === 'due' ? '' : ' data-reorder'}>${g.map((i) => itemRow(i, l)).join('')}</div></div>`;
   }
-  return html;
+  return html ? `<div class="flow">${html}</div>` : html;
 }
 
 /* ---------- Work ---------- */
@@ -1770,6 +1778,7 @@ function alexaSheet(s) {
         : `<div class="row tap" data-a="alexaCode"><span class="tile-icon sm" style="--c:#1AA3D9">${icon('voice', 18, 2.2)}</span><div class="row-main"><div class="row-title">${s.linked ? 'Link again' : 'Link my voice'}</div><div class="row-sub">Get a 4-digit code to say to Alexa</div></div><span class="chev">${icon('chevR', 16, 2.4)}</span></div>`}
     </div>
     <p class="hint">First, in the Alexa app on your phone, set up <b>Voice ID</b> for yourself and turn on <b>Personalise skills</b>. Then get a code and say it to any Echo.</p>
+    <a class="btn secondary" style="display:block;text-align:center;margin-top:18px;text-decoration:none" href="alexa-guide.html">Open the full Alexa guide</a>
     <div class="section-label">Things to say</div>
     <div class="group">${ALEXA_SAYS.map(([t, sub]) => `<div class="row"><div class="row-main" style="cursor:default"><div class="row-title">“${t}”</div>${sub ? `<div class="row-sub">${sub}</div>` : ''}</div></div>`).join('')}</div>
     <p class="hint">Gift lists and the budget are never available through Alexa — so no surprises get spoiled.</p>`;

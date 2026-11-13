@@ -133,3 +133,9 @@ Family → Appearance → **Theme** opens the theme page: a live light/dark prev
 
 ## Fire TV app
 `firetv/` is a small Android app that opens the TV dashboard full screen (keeps the screen awake, remote arrows move between buttons). GitHub builds it automatically (`.github/workflows/firetv.yml`) and publishes it at `quickdraw10.github.io/mcgaw-lists/tv.apk`. Install on the Fire TV with the free **Downloader** app.
+
+## Big screens
+On a laptop or desktop (1000px+ wide) the app switches to a sidebar, flows list sections into columns, fits the whole work week across the screen, and opens task screens as a centred panel. Phones are unchanged.
+
+## Alexa guide
+`alexa-guide.html` — every Alexa command, grouped, printable on one A4 sheet. Linked from Family → Alexa.

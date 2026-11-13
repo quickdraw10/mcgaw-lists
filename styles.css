@@ -844,3 +844,31 @@ body.tv-mode #view { padding: 0 !important; background: #0B0B0F; }
 /* Fire TV app: a clear outline on whatever the remote has selected */
 .tv-app :focus { outline: 3px solid var(--accent) !important; outline-offset: 2px; border-radius: 12px; }
 .tv-app .tv-board :focus { outline: none !important; }
+
+/* ============ Laptop & desktop ============ */
+@media (min-width: 760px) {
+  .tiles { grid-template-columns: repeat(4, 1fr); }
+  .flow { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 0 22px; align-items: start; }
+  .flow .fsec > .section-label:first-child { margin-top: 22px; }
+}
+@media (min-width: 1000px) {
+  body.side #view { margin-left: 232px; max-width: min(1480px, calc(100vw - 232px)); padding: 28px 44px 60px; }
+  body.side #view.no-tabs { padding-bottom: 60px; }
+  body.side #tabbar { top: 0; right: auto; width: 232px; flex-direction: column; justify-content: flex-start; gap: 4px; padding: calc(var(--safe-t) + 22px) 14px 20px; border-top: 0; border-right: .5px solid var(--sep); }
+  body.side #tabbar .side-brand { font-size: 20px; font-weight: 800; letter-spacing: -.01em; padding: 0 12px 18px; color: var(--label); }
+  body.side #tabbar button { flex: 0 0 auto; flex-direction: row; justify-content: flex-start; gap: 12px; max-width: none; width: 100%; padding: 10px 12px; border-radius: 12px; font-size: 15px; font-weight: 600; color: var(--label2); }
+  body.side #tabbar button svg { width: 22px; height: 22px; }
+  body.side #tabbar button.on { background: var(--fill); color: var(--accent); }
+  body.side #tabbar .badge { position: static; margin-left: auto; order: 3; }
+  body.side .sheet { left: 232px; max-width: 680px; bottom: 24px; border-radius: var(--r-lg); max-height: calc(100vh - 48px); box-shadow: 0 30px 80px rgba(0,0,0,.25); }
+  h1.large { font-size: 40px; }
+  /* Work calendar: the whole week fits, columns share the width */
+  .cal-scroll { margin: 12px 0 0; padding: 0 0 6px; }
+  .cal.n7 .cal-grid { width: auto; }
+  .cal.n7 .cal-row { grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(0, .9fr); }
+  .cal.n3 .cal-card .check.sm { display: block; }
+  .cc-t { font-size: 14px; }
+}
+@media (min-width: 1500px) {
+  .cal-cell { min-height: 64px; }
+}

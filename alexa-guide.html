@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Alexa guide — McGaw Lists</title>
+<style>
+  :root { --bg: #F2F2F7; --card: #fff; --label: #000; --label2: rgba(60,60,67,.62); --sep: rgba(60,60,67,.14); --accent: #1AA3D9; --chip: #EEF7FB; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #000; --card: #1C1C1E; --label: #fff; --label2: rgba(235,235,245,.62); --sep: rgba(255,255,255,.14); --chip: #0E2733; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--label); font: 17px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+  main { max-width: 1100px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 20px) 16px 60px; }
+  a.back { color: var(--accent); text-decoration: none; font-size: 17px; }
+  h1 { font-size: 34px; letter-spacing: -.02em; margin: 14px 0 4px; }
+  .lead { color: var(--label2); margin: 0 0 18px; max-width: 760px; }
+  .wake { background: var(--accent); color: #fff; border-radius: 18px; padding: 16px 18px; margin: 0 0 22px; }
+  .wake b { font-size: 21px; display: block; }
+  .wake span { opacity: .9; font-size: 15px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; align-items: start; }
+  section { background: var(--card); border-radius: 18px; padding: 16px 18px 12px; break-inside: avoid; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--c, var(--accent)); margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  h2 i { width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--accent)); }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { padding: 9px 0; border-top: .5px solid var(--sep); }
+  li:first-child { border-top: 0; }
+  q { quotes: "“" "”"; font-weight: 600; }
+  li small { display: block; color: var(--label2); font-size: 14px; margin-top: 2px; }
+  .also { color: var(--label2); font-size: 14px; margin: 8px 0 4px; }
+  .tips li { padding: 10px 0; }
+  .tips b { display: block; }
+  .note { color: var(--label2); font-size: 14px; margin-top: 24px; }
+  @media print {
+    :root { --bg: #fff; --card: #fff; --label: #000; --label2: #555; --sep: #ddd; }
+    a.back, .noprint { display: none; }
+    main { padding: 0; max-width: none; }
+    body { font-size: 12px; line-height: 1.3; }
+    h1 { font-size: 20px; margin: 0 0 2px; } .lead { font-size: 10px; margin-bottom: 8px; }
+    .grid { display: block; columns: 3; column-gap: 10px; }
+    section { border: 1px solid #ddd; margin: 0 0 8px; padding: 7px 9px 5px; border-radius: 8px; display: inline-block; width: 100%; }
+    h2 { font-size: 9px; margin-bottom: 4px; }
+    li { padding: 3px 0; } li small, .also { font-size: 10px; margin: 1px 0 0; }
+    .tips li { padding: 3px 0; }
+    .wake { background: #fff; color: #000; border: 2px solid #1AA3D9; padding: 7px 10px; margin-bottom: 8px; border-radius: 10px; }
+    .wake b { font-size: 14px; display: inline; } .wake span { font-size: 10px; }
+    .note { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <a class="back noprint" href="./#/family">‹ McGaw Lists</a>
+  <h1>Talking to McGaw Lists</h1>
+  <p class="lead">Works on any Echo in the house, the Echo Show and the Fire TV (hold the Alexa button on the remote). On a screen, Alexa shows what she’s talking about — tap or press select on an item to tick it off.</p>
+
+  <div class="wake"><b>“Alexa, ask family lists…”</b><span>then say what you want. Or say <b>“Alexa, open family lists”</b> for a summary, then talk without repeating the first bit.</span></div>
+
+  <div class="grid">
+    <section style="--c:#30B05A">
+      <h2><i></i>Shopping &amp; adding things</h2>
+      <ul>
+        <li><q>add milk and bread</q><small>Goes on the shared shopping list, in the right aisle</small></li>
+        <li><q>add two pints of milk</q><small>Quantities work: “500 grams of mince”, “a dozen eggs”</small></li>
+        <li><q>we’re out of washing up liquid</q></li>
+        <li><q>add eggs, bacon and bread</q><small>Say “and” between things — Alexa doesn’t hear commas</small></li>
+        <li><q>add call the dentist to my to do list</q></li>
+        <li><q>add chase invoice to my work list</q></li>
+        <li><q>put sun cream on the packing list</q></li>
+      </ul>
+      <p class="also">Things bought before come back off “Used before” — no duplicates.</p>
+    </section>
+
+    <section style="--c:#0A84FF">
+      <h2><i></i>Reading a list</h2>
+      <ul>
+        <li><q>what’s on the shopping list</q></li>
+        <li><q>what do we need</q></li>
+        <li><q>read my to do list</q></li>
+        <li><q>show the work list</q><small>Any list by name: “show Ongoing Work To-Do List”</small></li>
+        <li><q>what’s on the packing list</q></li>
+      </ul>
+    </section>
+
+    <section style="--c:#34C759">
+      <h2><i></i>Ticking things off</h2>
+      <ul>
+        <li><q>tick off milk</q></li>
+        <li><q>we’ve got eggs and bread</q></li>
+        <li><q>cross off book the MOT</q></li>
+        <li><q>remove bananas from the shopping list</q></li>
+        <li><q>I’ve done the expenses</q></li>
+      </ul>
+      <p class="also">On the Echo Show or TV: tap (or select) the circle next to an item.</p>
+    </section>
+
+    <section style="--c:#FF375F">
+      <h2><i></i>Dinner &amp; the meal plan</h2>
+      <ul>
+        <li><q>what’s for dinner</q> / <q>what’s for tea</q></li>
+        <li><q>what’s for dinner tomorrow</q><small>Or any day: “on Friday”</small></li>
+        <li><q>who’s cooking tonight</q></li>
+        <li><q>what are we having this week</q><small>Shows the week on screen</small></li>
+        <li><q>we’re having lasagne for dinner on Friday</q></li>
+        <li><q>put fish and chips on the meal plan for Saturday</q></li>
+      </ul>
+    </section>
+
+    <section style="--c:#FF9500">
+      <h2><i></i>Who’s home for dinner</h2>
+      <ul>
+        <li><q>I’m out for dinner on Thursday</q></li>
+        <li><q>I’ll be late for dinner tonight</q></li>
+        <li><q>I’m home for dinner tomorrow</q></li>
+      </ul>
+      <p class="also">Needs your voice linked (see below) so Alexa knows who “I” is.</p>
+    </section>
+
+    <section style="--c:#5E5CE6">
+      <h2><i></i>Your tasks</h2>
+      <ul>
+        <li><q>what have I got to do</q><small>Overdue and due today, then the week</small></li>
+        <li><q>what’s due today</q></li>
+        <li><q>what’s overdue</q></li>
+        <li><q>what’s urgent</q></li>
+        <li><q>show my tasks</q><small>Your week on screen, by priority</small></li>
+      </ul>
+    </section>
+
+    <section style="--c:#BF5AF2">
+      <h2><i></i>Countdowns</h2>
+      <ul>
+        <li><q>how long until Center Parcs</q></li>
+        <li><q>how many sleeps until Christmas</q></li>
+        <li><q>show the countdown to the holiday</q><small>A live, ticking countdown on screen</small></li>
+        <li><q>show the countdowns</q><small>The next one coming up</small></li>
+      </ul>
+    </section>
+
+    <section style="--c:#F5B800">
+      <h2><i></i>Notice board &amp; today</h2>
+      <ul>
+        <li><q>read the notice board</q></li>
+        <li><q>any notes</q></li>
+        <li><q>what’s on today</q><small>Dinner, tasks, shopping, next countdown and newest note — a dashboard on screen</small></li>
+        <li><q>give me a summary</q></li>
+      </ul>
+    </section>
+
+    <section style="--c:#1AA3D9">
+      <h2><i></i>Linking your voice</h2>
+      <ul>
+        <li><b>1.</b> In the Alexa app: set up <b>Voice ID</b> for yourself and turn on <b>Personalise skills</b>.</li>
+        <li><b>2.</b> In McGaw Lists: <b>Family → Alexa → Link my voice</b> for a 4-digit code.</li>
+        <li><b>3.</b> Say <q>Alexa, ask family lists, my code is 1234</q></li>
+        <li><q>who am I</q><small>Checks Alexa knows your voice</small></li>
+      </ul>
+      <p class="also">Until you’re linked, Alexa only uses lists the whole family shares.</p>
+    </section>
+
+    <section style="--c:#8E8E93" class="tips">
+      <h2><i></i>Good to know</h2>
+      <ul>
+        <li><b>“Help”</b>Say “help” while the skill is open to hear examples.</li>
+        <li><b>“Stop” or “cancel”</b>Ends it. The Echo Show screen stays up for a few minutes, then goes back to normal.</li>
+        <li><b>Never by voice</b>Gift lists and the budget can’t be read or changed through Alexa — no spoilt surprises.</li>
+        <li><b>She misheard?</b>Speak the list name clearly (“the shopping list”, “my work list”). Anything added by Alexa shows “via Alexa” in the app, so it’s easy to fix.</li>
+        <li><b>Fire TV</b>Hold the Alexa button on the remote and speak. Use the arrows and select to move around and tick things off.</li>
+      </ul>
+    </section>
+  </div>
+
+  <p class="note">Tip: print this page (Share → Print) for the fridge — it fits on one A4 sheet.</p>
+</main>
+</body>
+</html>
