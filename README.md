@@ -130,3 +130,6 @@ Setup: run `supabase/outlook.sql`; deploy `supabase/functions/outlook/index.ts` 
 
 ## Themes
 Family → Appearance → **Theme** opens the theme page: a live light/dark preview, 16 preset themes, and **Your own colours** (accent, background and cards for light and dark mode, with colour pickers). Text automatically stays readable. Saved per phone.
+
+## Fire TV app
+`firetv/` is a small Android app that opens the TV dashboard full screen (keeps the screen awake, remote arrows move between buttons). GitHub builds it automatically (`.github/workflows/firetv.yml`) and publishes it at `quickdraw10.github.io/mcgaw-lists/tv.apk`. Install on the Fire TV with the free **Downloader** app.

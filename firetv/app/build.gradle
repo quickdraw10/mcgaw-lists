@@ -1,0 +1,24 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'uk.mcgaw.liststv'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'uk.mcgaw.liststv'
+        minSdk 22
+        targetSdk 34
+        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int)
+        versionName "1.${System.getenv('GITHUB_RUN_NUMBER') ?: '0'}"
+    }
+    // Signing key for this family app (sideloaded, not on any store). Keeping it with the code lets
+    // new versions install over the old one without signing in again.
+    signingConfigs {
+        release {
+            storeFile file('signing.jks')
+            storePassword 'jze9HjQ4K4dO5RIPi3_OeiOc'
+            keyAlias 'mcgaw'
+            keyPassword 'jze9HjQ4K4dO5RIPi3_OeiOc'
+        }
+    }
+    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.release } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+}

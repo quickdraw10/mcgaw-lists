@@ -3976,6 +3976,43 @@ function showLogin() {
   }
 }
 
+/* ---------- Fire TV app: move between buttons with the remote's arrows ---------- */
+const TV_APP = /McGawListsTV/.test(navigator.userAgent);
+if (TV_APP) {
+  document.documentElement.classList.add('tv-app');
+  const focusables = () => [...document.querySelectorAll('#sheets .sheet:last-child button, #sheets .sheet:last-child input, #sheets .sheet:last-child select, #sheets .sheet:last-child [data-a]')].length
+    ? [...document.querySelectorAll('#sheets .sheet:last-child button, #sheets .sheet:last-child input, #sheets .sheet:last-child select, #sheets .sheet:last-child [data-a]')]
+    : [...document.querySelectorAll('#view button, #view input, #view select, #view [data-a], #tabbar button')];
+  document.addEventListener('keydown', (e) => {
+    const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+    if (!dir) return;
+    const cur = document.activeElement;
+    if (cur && cur.tagName === 'INPUT' && dir[0] && cur.type !== 'checkbox') return; // let left/right move the text cursor
+    const items = focusables().filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !el.disabled; });
+    if (!items.length) return;
+    e.preventDefault();
+    if (!cur || cur === document.body || !items.includes(cur)) { items[0].focus(); return; }
+    const c = cur.getBoundingClientRect(), cx = c.left + c.width / 2, cy = c.top + c.height / 2;
+    let best = null, bestScore = Infinity;
+    for (const el of items) {
+      if (el === cur || cur.contains(el) || el.contains(cur)) continue;
+      const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const dx = x - cx, dy = y - cy;
+      const along = dx * dir[0] + dy * dir[1];
+      if (along <= 4) continue;
+      const across = Math.abs(dx * dir[1]) + Math.abs(dy * dir[0]);
+      const score = along + across * 2.2;
+      if (score < bestScore) { bestScore = score; best = el; }
+    }
+    if (best) { if (!best.matches('button, input, select, a')) best.tabIndex = 0; best.focus({ preventScroll: true }); best.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+  });
+  // Select on a non-button tile acts like a tap
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const el = document.activeElement;
+    if (el && el.hasAttribute('data-a') && !el.matches('button, input, select, a')) { e.preventDefault(); el.click(); }
+  });
+}
 function askNewPassword() {
   window.PW_RECOVERY = false;
   if (!S.sheets.some((x) => x.kind === 'password')) openSheet({ kind: 'password', recovery: true });

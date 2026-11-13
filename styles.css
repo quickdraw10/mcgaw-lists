@@ -840,3 +840,7 @@ body.tv-mode #view { padding: 0 !important; background: #0B0B0F; }
 .tc-l small { color: var(--label2); font-size: 12px; }
 .tc-sw { margin-left: auto; position: relative; width: 44px; height: 30px; border-radius: 9px; background: var(--c); box-shadow: inset 0 0 0 .5px rgba(0,0,0,.25); overflow: hidden; }
 .tc-sw input { position: absolute; inset: -8px; width: calc(100% + 16px); height: calc(100% + 16px); opacity: 0; cursor: pointer; border: 0; padding: 0; }
+
+/* Fire TV app: a clear outline on whatever the remote has selected */
+.tv-app :focus { outline: 3px solid var(--accent) !important; outline-offset: 2px; border-radius: 12px; }
+.tv-app .tv-board :focus { outline: none !important; }
