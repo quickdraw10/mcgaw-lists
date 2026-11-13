@@ -261,7 +261,10 @@ const OPTIONAL = ['gift_status', 'countdowns', 'budget_accounts', 'budget_pots',
 
 class SupaStore {
   constructor() {
+    // A "reset password" email link: remember it before the sign-in library tidies the address away
+    if (/type=recovery/.test(location.hash + location.search)) window.PW_RECOVERY = true;
     this.sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true } });
+    this.sb.auth.onAuthStateChange((ev) => { if (ev === 'PASSWORD_RECOVERY') { window.PW_RECOVERY = true; if (S.me) askNewPassword(); } });
   }
   async session() { const { data } = await this.sb.auth.getSession(); return data.session; }
   async signIn(email, password) { const { error } = await this.sb.auth.signInWithPassword({ email, password }); if (error) throw error; }
@@ -297,7 +300,6 @@ class SupaStore {
   async insertIgnore(t, rows, key) { const { error } = await this.sb.from(t).upsert(rows, { onConflict: key, ignoreDuplicates: true }); if (error) throw error; }
   subscribe(cb) {
     this.sb.channel('mcgaw-all').on('postgres_changes', { event: '*', schema: 'public' }, cb).subscribe();
-    this.sb.auth.onAuthStateChange((ev) => { if (ev === 'PASSWORD_RECOVERY') openSheet({ kind: 'password' }); });
   }
   async todo(action, payload = {}) {
     const { data, error } = await this.sb.functions.invoke('todo', { body: { action, ...payload } });
@@ -960,6 +962,7 @@ function familyView() {
     <div class="section-label">The McGaws</div><div class="group">${fam}</div>
     <div class="stack-gap" style="margin-top:22px">
       ${DEMO ? '<button class="btn secondary" data-a="resetDemo">Reset demo data</button>' : ''}
+      ${DEMO ? '' : '<button class="btn secondary" style="margin-bottom:10px" data-a="changePassword">Change password</button>'}
       <button class="btn danger" data-a="signOut">${DEMO ? 'Switch person' : 'Sign out'}</button>
     </div>
     <p class="hint" style="text-align:center;margin-top:16px">McGaw Lists · just for the four of us</p>`;
@@ -2372,6 +2375,7 @@ const A = {
   setMode: (el) => { setPref('mode', el.dataset.v); applyAppearance(); render(); },
   setTheme: (el) => { setPref('theme', el.dataset.v); applyAppearance(); render(); renderSheets(true); },
   openThemes: () => openSheet({ kind: 'themes' }),
+  changePassword: () => openSheet({ kind: 'password' }),
   themeCustomFrom: () => {
     const t = currentTheme();
     setPref('custom', JSON.stringify({ accent: t.accent, bgL: t.bgL, cardL: t.cardL || '#FFFFFF', bgD: t.bgD, cardD: t.cardD }));
@@ -3972,6 +3976,10 @@ function showLogin() {
   }
 }
 
+function askNewPassword() {
+  window.PW_RECOVERY = false;
+  if (!S.sheets.some((x) => x.kind === 'password')) openSheet({ kind: 'password', recovery: true });
+}
 async function start() {
   try {
     const sess = await store.session();
@@ -3987,6 +3995,7 @@ async function start() {
     render();
     await reload();
     store.subscribe(scheduleReload);
+    if (window.PW_RECOVERY) askNewPassword();
     loadTodo(true);
     loadOutlook();
   } catch (e) {
