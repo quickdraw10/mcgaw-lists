@@ -1032,12 +1032,29 @@ function itemRow(it, l, opts = {}) {
     ${xmas ? '' : avatarStack(it.assignees, 22)}</div>`;
 }
 const quickAdd = (l, ph, extra = '') => `<div class="quick"><span class="plus">${icon('plus', 22, 2.4)}</span><input id="qa-${l.id}" placeholder="${ph}" enterkeyhint="done" autocomplete="off" data-enter="quickAdd" data-id="${l.id}"${l.type === 'shopping' ? ' data-input="shopSuggest"' : ''}>${extra}</div>${l.type === 'shopping' ? `<div class="suggest" id="sg-${l.id}"></div>` : ''}`;
+// Everything bought before on this list: in the trolley now, or cleared out earlier — one per name
+function boughtBefore(listId) {
+  const seen = new Map();
+  for (const i of S.data.items) {
+    if (i.list_id !== listId || i.parent_id || !(i.done || i.data?.cleared)) continue;
+    const k = i.text.trim().toLowerCase();
+    const cur = seen.get(k);
+    // prefer the one in the trolley (unticking it keeps its quantity)
+    if (!cur || (cur.data?.cleared && !i.data?.cleared)) seen.set(k, i);
+  }
+  return [...seen.values()];
+}
 function suggestChips(l, q) {
   q = q.trim().toLowerCase();
   if (q.length < 1) return '';
-  const words = parseQty(q).text.toLowerCase() || q;
-  const hits = pastSorted(l.id).filter((i) => i.text.toLowerCase().split(/\s+/).some((w) => w.startsWith(words)) || i.text.toLowerCase().startsWith(words)).slice(0, 6);
-  return hits.length ? `<span class="muted">Used before</span>${hits.map((i) => `<button class="chip" data-a="restorePast" data-id="${i.id}">${icon('plus', 13, 2.6)}${esc(i.text)}</button>`).join('')}` : '';
+  const words = (parseQty(q).text || q).toLowerCase();
+  const open = new Set(itemsOf(l.id).filter((i) => !i.done).map((i) => i.text.trim().toLowerCase()));
+  const score = (i) => { const t = i.text.toLowerCase(); return t.startsWith(words) ? 0 : t.split(/\s+/).some((w) => w.startsWith(words)) ? 1 : 2; };
+  const hits = boughtBefore(l.id)
+    .filter((i) => !open.has(i.text.trim().toLowerCase()) && score(i) < 2)
+    .sort((a, b) => score(a) - score(b) || (b.data?.uses || 1) - (a.data?.uses || 1) || a.text.localeCompare(b.text))
+    .slice(0, 6);
+  return hits.length ? `<span class="muted">Bought before</span>${hits.map((i) => `<button class="chip" data-a="restorePast" data-id="${i.id}">${icon('plus', 13, 2.6)}${esc(i.text)}${i.data?.cleared ? '' : ' <i class="in-trolley">in trolley</i>'}</button>`).join('')}` : '';
 }
 function pastSection(l) {
   const past = pastSorted(l.id);
@@ -2547,7 +2564,8 @@ async function clearShopping(l, done) {
 }
 async function restorePast(i, qty) {
   const data = { ...(i.data || {}) }; delete data.cleared;
-  await upd('items', { id: i.id }, { data, done: false, done_by: null, done_at: null, quantity: qty !== undefined ? qty : null, position: Date.now() / 1000 });
+  // Back onto the list as the same item — never a new line. A trolley item keeps its quantity unless you typed one.
+  await upd('items', { id: i.id }, { data, done: false, done_by: null, done_at: null, quantity: qty || (i.data?.cleared ? null : i.quantity), position: Date.now() / 1000 });
   toast(`${i.text} is back on the list`);
 }
 const ENTER = {
